@@ -1,0 +1,18 @@
+venv/
+.env
+uploads/spectrograms
+uploads/waveforms
+
+# Ignorar arquivos de configuração do IDE
+*.pyc
+__pycache__/
+
+# Ignorar arquivos de log
+*.log
+
+# Ignorar arquivos de cache
+*.pyo
+*.pyd
+
+# Ignorar outros arquivos temporários
+*.DS_Store

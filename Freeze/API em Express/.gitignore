@@ -1,0 +1,54 @@
+# Dependências
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Arquivos de ambiente
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Arquivos de build
+dist/
+build/
+
+# Arquivos temporários
+tmp/
+temp/
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos de IDE e editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Arquivos de teste
+coverage/
+
+# Arquivos de cache
+.cache/
+
+# Arquivos de documentação gerados automaticamente
+docs/
+
+# Arquivos de backup
+*.bak
+*.backup
+
+# Arquivos de certificado SSL
+*.pem
+*.key
+*.crt
+
+# Outros
+*.pid
+*.seed
+*.pid.lock

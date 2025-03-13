@@ -1,0 +1,131 @@
+[
+    {
+    "nome": "João Silva",
+    "email": "joao.silva@example.com",
+    "senha": "senha123",
+    "celular": "+55 11 91234-5678",
+    "descricao_hipersensibilidade": "Sensível a luzes fortes e barulhos altos",
+    "controle_parental": null
+},
+{
+    "_id":"user002",
+    "nome":"Maria Oliveira",
+    "email":"maria.oliveira@example.com",
+    "senha":"senha456",
+    "celular":"+55 21 98765-4321",
+    "descricao_hipersensibilidade":"Alergia a certos alimentos",
+    "controle_parental":{
+        "responsavel_id":"parent001",
+        "nome":"Carlos Oliveira",
+        "email":"carlos.oliveira@example.com",
+        "celular":"+55 21 91234-5678"
+    }
+},
+
+
+
+
+
+
+
+{
+    "_id":"noise001",
+    "usuario_id":"user001",
+    "tipo":"branco",
+    "nome":"Ruído Branco",
+    "descricao":"Ruído com todas as frequências em igual intensidade",
+    "url":"https://example.com/ruido_branco"
+},
+{
+    "_id":"noise002",
+    "usuario_id":"user002",
+    "tipo":"rosa",
+    "nome":"Ruído Rosa",
+    "descricao":"Ruído com intensidade decrescente a cada oitava",
+    "url":"https://example.com/ruido_rosa"
+},
+
+
+
+
+
+
+{
+    "_id":"playlist001",
+    "titulo":"Minhas Favoritas","descricao":"Playlist com as músicas favoritas",
+    "usuario_id":"user001",
+    "itens":[
+        "musica001",
+        "musica002"
+        ]
+},
+{
+    "_id":"playlist002",
+    "titulo":"Rock Clássico","descricao":"Playlist com músicas de rock clássico",
+    "usuario_id":"user002",
+    "itens":[
+        "musica002"
+        ]
+},
+
+
+
+
+
+
+{
+    "_id":"musica001",
+    "titulo":"Música A",
+    "artista":"Artista A",
+    "album":"Álbum A",
+    "duracao": 210,
+    "genero":"Pop",
+    "url_streaming":"https://example.com/musica_a"
+},
+
+{
+    "_id":"musica002",
+    "titulo":"Música B",
+    "artista":"Artista B",
+    "album":"Álbum B",
+    "duracao": 180,
+    "genero":"Rock",
+    "url_streaming":"https://example.com/musica_b"
+},
+
+
+
+
+{
+    "_id":"ai_data001",
+    "usuario_id":"user001",
+    "tipo":"dataset",
+    "nome":"Dataset de Imagens",
+    "descricao":"Dataset contendo imagens para treinamento de modelos de visão computacional",
+    "url":"https://example.com/dataset_imagens",
+    "data_criacao":"2024-09-17T12:00:00Z",
+    "metadados":{
+        "tamanho":"1GB",
+        "formatos":[
+            "jpg",
+            "png"
+        ]
+    }
+},
+
+{
+    "_id":"ai_data002",
+    "usuario_id":"user002",
+    "tipo":"modelo",
+    "nome":"Modelo de Predição de Texto",
+    "descricao":"Modelo treinado para prever o próximo texto com base em entradas anteriores",
+    "url":"https://example.com/modelo_predicao_texto","data_criacao":"2024-09-17T12:00:00Z",
+    "metadados":{
+        "versao":"1.0",
+        "framework":"TensorFlow"
+    }
+}
+]
+
+
+

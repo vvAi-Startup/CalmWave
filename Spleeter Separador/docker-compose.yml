@@ -1,0 +1,14 @@
+version: '3'
+services:
+  spleeter:
+    build: .
+    volumes:
+      - ./input:/app/input:rw
+      - ./output:/app/output:rw
+      - spleeter_model:/model
+    environment:
+      - MODEL_PATH=/model
+    restart: always
+
+volumes:
+  spleeter_model:
