@@ -1,20 +1,23 @@
-import React from 'react';
-import { Text, View } from 'react-native';
-import { useFonts } from 'expo-font';
-import LoginScreen from '@/screens/Login';
-import RecordScreen from '@/screens/Record'; 
+import React from "react";
+import { Text, View } from "react-native";
+import { useFonts } from "expo-font";
+import LoginScreen from "@/screens/Login";
+import RecordScreen from "@/screens/Record";
+import { NavProvider } from "@/context/navContext";
+import AudioListScreen from "@/screens/AudioScreen";
 
 export default function Index() {
   const [fontsLoaded] = useFonts({
-    'BigShoulders-Regular': require('../assets/fonts/BigShoulders-Regular.ttf'),
-    'Azonix': require('../assets/fonts/Azonix.otf'),
+    "BigShoulders-Regular": require("../assets/fonts/BigShoulders-Regular.ttf"),
+    Azonix: require("../assets/fonts/Azonix.otf"),
   });
 
   if (!fontsLoaded) {
-    return null; 
+    return null;
   }
-
   return (
-    <RecordScreen />
+    <NavProvider>
+      <AudioListScreen/>
+    </NavProvider>
   );
 }
