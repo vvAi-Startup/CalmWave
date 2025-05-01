@@ -12,17 +12,17 @@ export const Nav = () => {
   return (
     <View style={styles.container}>
       <TouchableOpacity onPress={() => setSelecionado("audio")}>
-        <View style={selecionado === "audio" ? styles.selecionado : styles.logo}>
+        <View style={selecionado === "audio" ? styles.selecionado : styles.item}>
           <Audio width={40} height={40} />
         </View>
       </TouchableOpacity>
       <TouchableOpacity onPress={() => setSelecionado("home")}>
-        <View style={selecionado === "home" ? styles.selecionado : styles.logo}>
+        <View style={selecionado === "home" ? styles.selecionado : styles.item}>
           <Logo width={60} height={60} />
         </View>
       </TouchableOpacity>
       <TouchableOpacity onPress={() => setSelecionado("config")}>
-        <View style={selecionado === "config" ? styles.selecionado : styles.logo}>
+        <View style={selecionado === "config" ? styles.selecionado : styles.item}>
           <Config width={40} height={40} />
         </View>
       </TouchableOpacity>

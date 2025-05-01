@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons'; 
 import styles from './styles';
 
 type AudioItemProps = {
@@ -8,11 +9,22 @@ type AudioItemProps = {
 };
 
 const AudioItem: React.FC<AudioItemProps> = ({ title, onPlay }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const handlePress = () => {
+    setIsPlaying(!isPlaying);
+    onPlay(); 
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{title}</Text>
-      <TouchableOpacity onPress={onPlay} style={styles.button}>
-        <Text style={styles.botaoTexto}>▶️ Play</Text>
+      <TouchableOpacity onPress={handlePress} style={styles.button}>
+        <Ionicons 
+          name={isPlaying ? "pause" : "play"} 
+          size={42} 
+          color="#391C73" 
+        />
       </TouchableOpacity>
     </View>
   );

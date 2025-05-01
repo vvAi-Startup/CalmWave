@@ -12,7 +12,7 @@ export const styles = StyleSheet.create({
         alignItems: 'center'
     },
     item: {
-        flex: 1, // Divide equally among items
+        flex: 1, 
         justifyContent: 'center',
         alignItems: 'center'
     },

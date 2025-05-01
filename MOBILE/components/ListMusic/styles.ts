@@ -4,25 +4,26 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#ccc',
-    backgroundColor: '#fff',
+    backgroundColor: '#6C757D', 
+    borderRadius: 8, 
+    marginVertical: 8, 
   },
   title: {
     flex: 1,
-    fontSize: 16,
-    color: '#333',
+    fontSize: 26,
+    color: '#fff', 
+    fontFamily: 'BigShoulders-Regular', // Fonte personalizada
+
+    
   },
   button: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#007AFF',
-    borderRadius: 4,
-  },
-  botaoTexto: {
-    color: '#fff',
-    fontWeight: 'bold',
+    padding: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    
   },
 });
 

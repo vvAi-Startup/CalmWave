@@ -9,7 +9,7 @@ import AudioListScreen from "@/screens/AudioScreen";
 export default function Index() {
   const [fontsLoaded] = useFonts({
     "BigShoulders-Regular": require("../assets/fonts/BigShoulders-Regular.ttf"),
-    Azonix: require("../assets/fonts/Azonix.otf"),
+    "Azonix": require("../assets/fonts/Azonix.otf"),
   });
 
   if (!fontsLoaded) {
