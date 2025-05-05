@@ -2,10 +2,26 @@ import React, { useState } from "react";
 import { TouchableOpacity, View, Text, Image } from "react-native";
 import { Input } from "../../components/Input";
 import { styles } from "./styles";
+import { useNavigation } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
+
+type RootStackParamList = {
+  Login: undefined;
+  AudioList: undefined;
+  Record: undefined;
+};
+
+type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const navigation = useNavigation<NavigationProp>();
+
+  const handleLogin = () => {
+    // Aqui você pode adicionar a lógica de autenticação
+    navigation.navigate("Record");
+  };
 
   return (
     <View style={styles.container}>
@@ -26,7 +42,7 @@ export default function LoginScreen() {
         secureTextEntry
       />
       <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.buttonlogin}>
+        <TouchableOpacity style={styles.buttonlogin} onPress={handleLogin}>
           <Text style={styles.buttonText}>Entrar</Text>
         </TouchableOpacity>
         <Text style={styles.ouText}>OU</Text>
@@ -34,7 +50,7 @@ export default function LoginScreen() {
           <Image
             source={require("../../assets/logos/google.png")}
             style={styles.imageGoogle}
-          ></Image>
+          />
           <Text style={styles.googleText}>Entrar com o Google</Text>
         </TouchableOpacity>
       </View>

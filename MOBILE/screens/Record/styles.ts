@@ -7,6 +7,12 @@ export const styles = StyleSheet.create({
     justifyContent: "flex-start",
     alignItems: "center",
   },
+  topContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 30,
+    marginTop: 50,
+  },
   title: {
     fontFamily: "Azonix",
     fontSize: 28,
@@ -18,12 +24,6 @@ export const styles = StyleSheet.create({
     fontSize: 24,
     color: "#9EBDC1",
     marginBottom: 20,
-  },
-  topContainer: {
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 30,
-    marginTop: 50,
   },
   recordContainer: {
     justifyContent: "center",
@@ -39,7 +39,7 @@ export const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    marginBottom: 20, 
+    marginBottom: 20,
   },
   recordButtonText: {
     color: "#fff",
@@ -87,11 +87,11 @@ export const styles = StyleSheet.create({
     borderRadius: 30,
     justifyContent: "center",
     alignItems: "center",
-},
- stopButtonSquad: {
-        width: 15,
-        height: 15,
-        backgroundColor: "#391C73",
-        borderRadius: 2,
-    },
+  },
+  stopButtonSquad: {
+    width: 15,
+    height: 15,
+    backgroundColor: "#391C73",
+    borderRadius: 2,
+  },
 });

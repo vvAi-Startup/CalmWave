@@ -19,6 +19,13 @@ export const styles = StyleSheet.create({
     selecionado: {
         backgroundColor: '#111111',
         borderRadius: 50,
+        padding: 20,
+        height: '100%',
+        marginBottom: 50
+    },
+    selecionadoHome: {
+        backgroundColor: '#111111',
+        borderRadius: 50,
         padding: 10,
         height: '100%',
         marginBottom: 50
