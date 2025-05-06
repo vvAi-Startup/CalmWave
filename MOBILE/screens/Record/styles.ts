@@ -94,4 +94,16 @@ export const styles = StyleSheet.create({
     backgroundColor: "#391C73",
     borderRadius: 2,
   },
+  timerText: {
+    marginTop: 50,
+    fontSize: 32,
+    backgroundColor: "#222",
+    color: "#fff",
+    fontWeight: "bold",
+    textAlign: "center",
+    padding:10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#5319C6",
+  },
 });

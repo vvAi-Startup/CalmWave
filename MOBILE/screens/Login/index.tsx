@@ -19,7 +19,7 @@ export default function LoginScreen() {
   const navigation = useNavigation<NavigationProp>();
 
   const handleLogin = () => {
-    // Aqui você pode adicionar a lógica de autenticação
+    // lógica de autenticação
     navigation.navigate("Record");
   };
 

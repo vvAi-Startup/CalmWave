@@ -11,6 +11,7 @@ export default function RecordScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [timer, setTimer] = useState(0);
 
   useEffect(() => {
     // Criar pasta de áudios
@@ -41,6 +42,22 @@ export default function RecordScreen() {
     return () => clearInterval(interval);
   }, [isRecording]);
 
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    if (isRecording) {
+      interval = setInterval(() => {
+        setTimer((prev) => prev + 1); // Incrementa o temporizador a cada segundo
+      }, 1000);
+    } else if (!isRecording && interval) {
+      clearInterval(interval); // Limpa o intervalo quando a gravação para
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRecording]);
+
   async function startRecording() {
     try {
       const { status } = await Audio.requestPermissionsAsync();
@@ -59,6 +76,7 @@ export default function RecordScreen() {
       );
       setRecording(recording);
       setIsRecording(true);
+      setTimer(0); // Reseta o temporizador ao iniciar a gravação
     } catch (err) {
       console.error('Falha ao iniciar gravação', err);
       Alert.alert('Erro', 'Não foi possível iniciar a gravação');
@@ -120,6 +138,12 @@ export default function RecordScreen() {
     }
   }
 
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.topContainer}>
@@ -152,6 +176,9 @@ export default function RecordScreen() {
             </View>
           </View>
         </TouchableOpacity>
+        {isRecording && (
+          <Text style={styles.timerText}>{formatTime(timer)}</Text> // Temporizador exibido abaixo do botão de stop
+        )}
       </View>
       <Nav/>
     </View>
