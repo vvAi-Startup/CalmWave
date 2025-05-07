@@ -1,0 +1,40 @@
+# Ignore a virtual environment (pasta padrão)
+venv/
+.env/
+ENV/
+env/
+
+# Bytecode compilado do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Arquivos de log
+*.log
+
+# Configurações locais do IDE/editor
+.vscode/
+.idea/
+
+# Arquivos temporários do sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos de cache de pacotes
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Configurações específicas do pytest
+.cache/
+
+# Arquivos de banco de dados SQLite
+*.sqlite3
+
+# Arquivos do Jupyter Notebook checkpoint
+.ipynb_checkpoints/
+
+# Arquivos de build/distribuição
+build/
+dist/
+*.egg-info/
+.eggs/
