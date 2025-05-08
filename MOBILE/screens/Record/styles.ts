@@ -96,8 +96,9 @@ export const styles = StyleSheet.create({
   },
   timerText: {
     fontSize: 24,
-    color: "#000",
-    marginTop: 20,
+    fontWeight: "bold",
+    color: "#FFF",
+    marginTop: 10,
   },
   processingContainer: {
     position: 'absolute',

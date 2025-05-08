@@ -1,50 +1,7 @@
 import { API_BASE_URL, API_ENDPOINTS, API_TIMEOUT, DEFAULT_HEADERS } from '../config/api';
 import * as FileSystem from 'expo-file-system';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
-
-let ffmpeg: FFmpeg | null = null;
 
 export const audioService = {
-  async initFFmpeg() {
-    if (!ffmpeg) {
-      ffmpeg = new FFmpeg();
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`/ffmpeg-core.wasm`, 'application/wasm'),
-      });
-    }
-  },
-
-  async convertToWav(audioUri: string): Promise<string> {
-    try {
-      await this.initFFmpeg();
-      
-      const wavUri = audioUri.replace('.m4a', '.wav');
-      console.log('Convertendo áudio para WAV:', wavUri);
-
-      // Ler o arquivo de áudio
-      const audioData = await FileSystem.readAsStringAsync(audioUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      // Converter para WAV usando FFmpeg
-      await ffmpeg!.writeFile('input.m4a', audioData);
-      await ffmpeg!.exec(['-i', 'input.m4a', '-acodec', 'pcm_s16le', '-ar', '44100', 'output.wav']);
-      const wavData = await ffmpeg!.readFile('output.wav');
-
-      // Salvar o arquivo WAV
-      await FileSystem.writeAsStringAsync(wavUri, wavData as string, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      return wavUri;
-    } catch (error) {
-      console.error('Erro na conversão para WAV:', error);
-      throw error;
-    }
-  },
-
   async uploadAudio(audioUri: string, sessionId?: string, chunkNumber: number = 0): Promise<any> {
     try {
       console.log('=== INÍCIO DO UPLOAD ===');
@@ -52,7 +9,6 @@ export const audioService = {
       console.log('Número do chunk:', chunkNumber);
       console.log('Session ID:', sessionId);
 
-      // Verificar se o arquivo existe
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
       if (!fileInfo.exists) {
         throw new Error('Arquivo não encontrado');
@@ -64,7 +20,6 @@ export const audioService = {
         uri: fileInfo.uri
       });
 
-      // Criar o FormData
       const formData = new FormData();
       const audioFile = {
         uri: audioUri,
@@ -74,19 +29,15 @@ export const audioService = {
       console.log('Arquivo de áudio:', audioFile);
       
       formData.append('audio', audioFile as any);
-
-      // Sempre enviar o session_id, mesmo que seja undefined
       formData.append('session_id', sessionId || '');
       formData.append('chunk_number', chunkNumber.toString());
       formData.append('is_final', 'false');
 
-      // Construir a URL
       const url = `${API_BASE_URL}${API_ENDPOINTS.UPLOAD_AUDIO}`;
       console.log('URL da requisição:', url);
       console.log('Headers:', DEFAULT_HEADERS);
       console.log('FormData:', formData);
 
-      // Fazer a requisição com timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
@@ -186,7 +137,6 @@ export const audioService = {
       console.log('=== INÍCIO DO PROCESSAMENTO ===');
       console.log('Session ID:', sessionId);
       
-      // Ajustando a URL para o endpoint correto
       const url = `${API_BASE_URL}/process/${sessionId}`;
       console.log('URL do processamento:', url);
 

@@ -107,18 +107,18 @@ export default function RecordScreen() {
     }
   };
 
-  const processAudioChunk = async () => {
-    const currentRecording = recordingRef.current;
-    if (!currentRecording || isUploading || uploadQueue.current) {
-      console.log('Pulando processamento:', {
-        hasRecording: !!currentRecording,
-        isUploading,
-        uploadQueue: uploadQueue.current
-      });
-      return;
-    }
-
+  const processAudioChunk = async (currentSessionId: string) => {
     try {
+      const currentRecording = recordingRef.current;
+
+      if (!currentRecording) {
+        return;
+      }
+
+      if (isUploading || uploadQueue.current) {
+        return;
+      }
+
       uploadQueue.current = true;
       setIsUploading(true);
       setUploadError(null);
@@ -126,19 +126,6 @@ export default function RecordScreen() {
       const currentUri = await currentRecording.getURI();
       if (!currentUri) {
         throw new Error('URI do áudio não encontrada');
-      }
-
-      console.log('Processando chunk:', {
-        uri: currentUri,
-        chunkNumber: chunkNumber.current,
-        sessionId
-      });
-
-      // Criar diretório da sessão se não existir
-      if (!sessionDirectory.current) {
-        const sessionDir = `${FileSystem.documentDirectory}audios/session_${Date.now()}`;
-        await FileSystem.makeDirectoryAsync(sessionDir, { intermediates: true });
-        sessionDirectory.current = sessionDir;
       }
 
       const chunkFileName = `chunk_${chunkNumber.current}.m4a`;
@@ -155,21 +142,12 @@ export default function RecordScreen() {
         throw new Error('Arquivo do chunk não foi criado corretamente');
       }
 
-      // Fazer upload do chunk
-      const uploadResponse = await audioService.uploadAudio(
+      // Fazer upload do chunk usando o sessionId existente
+      await audioService.uploadAudio(
         chunkUri,
-        sessionId || undefined,
+        currentSessionId,
         chunkNumber.current
       );
-
-      if (uploadResponse.session_id) {
-        if (!sessionId) {
-          console.log('Nova sessão criada:', uploadResponse.session_id);
-        } else if (sessionId !== uploadResponse.session_id) {
-          console.log('Atualizando session ID:', uploadResponse.session_id);
-        }
-        setSessionId(uploadResponse.session_id);
-      }
 
       // Deletar o chunk anterior se existir
       if (lastChunkUri.current) {
@@ -183,10 +161,6 @@ export default function RecordScreen() {
       lastChunkUri.current = chunkUri;
       chunkNumber.current += 1;
       lastChunkTime.current = Date.now();
-      console.log('Chunk processado com sucesso:', {
-        chunkNumber: chunkNumber.current - 1,
-        newLastChunkTime: lastChunkTime.current
-      });
 
     } catch (error) {
       console.error('Erro ao processar chunk:', error);
@@ -228,39 +202,49 @@ export default function RecordScreen() {
         playsInSilentModeIOS: true,
       });
 
+      // Gerar um novo sessionId no início da gravação
+      const newSessionId = `session_${Date.now()}`;
+
       const { recording: newRecording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
       
+      // Criar diretório da sessão
+      const sessionDir = `${FileSystem.documentDirectory}audios/${newSessionId}`;
+      await FileSystem.makeDirectoryAsync(sessionDir, { intermediates: true });
+
+      // Configurar estado inicial
       setRecording(newRecording);
       recordingRef.current = newRecording;
+      setSessionId(newSessionId);
       setIsRecording(true);
       setTimer(0);
-      setSessionId(null);
       lastChunkTime.current = Date.now();
       chunkNumber.current = 0;
       lastChunkUri.current = null;
-      sessionDirectory.current = null;
+      sessionDirectory.current = sessionDir;
       setUploadError(null);
 
-      // Verificar a cada 2 segundos se precisa enviar um novo chunk
+      // Configurar intervalo para enviar chunks a cada 5 segundos
       chunkInterval.current = setInterval(async () => {
-        if (recordingRef.current && !isUploading && !uploadQueue.current) {
-          const currentTime = Date.now();
-          console.log('Verificando chunks:', {
-            currentTime,
-            lastChunkTime: lastChunkTime.current,
-            diff: currentTime - lastChunkTime.current,
-            isUploading,
-            uploadQueue: uploadQueue.current
-          });
-          
-          if (currentTime - lastChunkTime.current >= 5000) {
-            console.log('Iniciando processamento do chunk...');
-            await processAudioChunk();
+        try {
+          const currentRecording = recordingRef.current;
+          const currentSessionId = newSessionId; // Usar o sessionId criado no início
+
+          if (!currentRecording) {
+            return;
           }
+
+          const currentTime = Date.now();
+          const timeSinceLastChunk = currentTime - lastChunkTime.current;
+          
+          if (timeSinceLastChunk >= 5000) {
+            await processAudioChunk(currentSessionId);
+          }
+        } catch (error) {
+          console.error('Erro no intervalo de chunks:', error);
         }
-      }, 2000);
+      }, 1000); // Verificar a cada segundo
 
     } catch (err) {
       console.error('Falha ao iniciar gravação', err);
@@ -298,8 +282,7 @@ export default function RecordScreen() {
           await audioService.uploadFinalChunk(finalChunkUri, sessionId, chunkNumber.current);
 
           // Processar o áudio completo
-          const processResponse = await audioService.processAudio(sessionId);
-          console.log('Resposta do processamento:', processResponse);
+          await audioService.processAudio(sessionId);
           
           Alert.alert(
             'Sucesso', 
