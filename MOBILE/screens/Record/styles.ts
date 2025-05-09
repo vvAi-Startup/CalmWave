@@ -8,10 +8,22 @@ export const styles = StyleSheet.create({
     alignItems: "center",
   },
   topContainer: {
-    justifyContent: "center",
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center", 
     marginBottom: 30,
     marginTop: 50,
+    width: "100%", 
+    position: "relative", 
+  },
+  menuContainer: {
+    position: "absolute", 
+    left: 25,
+    top:0,
+  },
+  textContainer: {
+    justifyContent: "center",
+    alignItems: "center", 
   },
   title: {
     fontFamily: "Azonix",
@@ -106,4 +118,10 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#5319C6",
   },
-});
+  statusIconsContainer: {
+    width:'90%',
+    flexDirection: 'row',
+    justifyContent:'space-between',
+    marginTop:'40%'
+  },
+})

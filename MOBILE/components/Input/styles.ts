@@ -5,6 +5,7 @@ export const styles = StyleSheet.create({
     marginBottom: 16,
     width: '60%',
     alignSelf: 'center',
+    color:'#000'
   },
   label: {
     fontSize: 32,
@@ -16,16 +17,16 @@ export const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#fff',
     borderRadius: 24,
     paddingHorizontal: 12,
-    paddingVertical: 10,
     height: 42,
-    width:'100%'
+    width:'100%',
+    color:'#000'
   },
   input: {
     flex: 1,
     fontSize: 16,
-    color: '#000',
+    color:'#000'
   },
 });

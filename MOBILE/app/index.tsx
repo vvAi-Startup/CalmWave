@@ -14,16 +14,17 @@ export default function Index() {
     "Azonix": require("../assets/fonts/Azonix.otf"),
   });
 
-  if (!fontsLoaded) {
-    return null;
-  }
+   if (!fontsLoaded) {
+     return null;
+   }
 
   return (
     <NavProvider>
       <Stack.Navigator 
         initialRouteName="Login"
         screenOptions={{
-          headerShown: false
+          headerShown: false,
+          animation: 'fade',
         }}
       > 
         <Stack.Screen name="Login" component={LoginScreen} /> 

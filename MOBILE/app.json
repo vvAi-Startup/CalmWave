@@ -15,9 +15,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff",
-        "package": "com.mobileprojetointegrador.android"
       },
-      "package": "com.anonymous.mobileprojetointegrador"
+      "package": "com.mobileprojetointegrador.android"
     },
     "web": {
       "bundler": "metro",
