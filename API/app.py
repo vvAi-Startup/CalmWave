@@ -80,6 +80,12 @@ def upload_audio():
         JSON: Informações sobre o chunk processado
     """
     try:
+        # Obter user_id do token JWT e autenticar
+        user_id = get_user_id_from_request()
+        if not user_id:
+            logger.warning("Tentativa de upload sem autenticação ou token inválido.")
+            return jsonify({'error': 'Usuário não autenticado ou token inválido'}), 401
+
         if 'audio' not in request.files:
             return jsonify({"error": "Nenhum arquivo de áudio enviado"}), 400
 
@@ -114,11 +120,6 @@ def upload_audio():
         content_type = audio_file.content_type
         filename = audio_file.filename
         logger.info(f"Upload recebido - Content-Type: {content_type}, Filename: {filename}")
-
-        # Obter user_id do token JWT
-        user_id = get_user_id_from_request()
-        if not user_id:
-            return jsonify({'error': 'Usuário não autenticado'}), 401
 
         # Salvar chunk
         result = audio_processor.save_audio_chunk(
@@ -221,6 +222,12 @@ def process_audio(session_id):
         JSON: Resultado do processamento
     """
     try:
+        # Autenticação
+        user_id = get_user_id_from_request() # user_id can be used for further checks if needed
+        if not user_id:
+            logger.warning(f"Tentativa de processar sessão {session_id} sem autenticação ou token inválido.")
+            return jsonify({'error': 'Usuário não autenticado ou token inválido'}), 401
+
         if session_id not in active_sessions:
             return jsonify({
                 "status": "error",
