@@ -1,43 +1,43 @@
-import { API_BASE_URL, API_ENDPOINTS, API_TIMEOUT, DEFAULT_HEADERS } from '../config/api';
+import { API_BASE_URL, API_ENDPOINTS, API_TIMEOUT } from '../config/api';
 import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const AUTH_TOKEN_KEY = '@CalmWave:token'; // Definindo uma chave constante para o token
+
+async function getAuthHeaders(): Promise<HeadersInit> {
+  const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+  return {
+    'Accept': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  };
+}
 
 export const audioService = {
   async uploadAudio(audioUri: string, sessionId?: string, chunkNumber: number = 0): Promise<any> {
     try {
+      const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+      if (!token) throw new Error('Token não encontrado');
+
       console.log('=== INÍCIO DO UPLOAD ===');
       console.log('URI do áudio:', audioUri);
       console.log('Número do chunk:', chunkNumber);
       console.log('Session ID:', sessionId);
 
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
-      if (!fileInfo.exists) {
-        throw new Error('Arquivo não encontrado');
-      }
-
-      console.log('Informações do arquivo:', {
-        exists: fileInfo.exists,
-        size: fileInfo.size,
-        uri: fileInfo.uri
-      });
+      if (!fileInfo.exists) throw new Error('Arquivo não encontrado');
 
       const formData = new FormData();
-      const audioFile = {
+      formData.append('audio', {
         uri: audioUri,
         type: 'audio/m4a',
         name: `chunk_${chunkNumber}.m4a`,
-      };
-      console.log('Arquivo de áudio:', audioFile);
-      
-      formData.append('audio', audioFile as any);
+      } as any);
       formData.append('session_id', sessionId || '');
       formData.append('chunk_number', chunkNumber.toString());
       formData.append('is_final', 'false');
 
       const url = `${API_BASE_URL}${API_ENDPOINTS.UPLOAD_AUDIO}`;
-      console.log('URL da requisição:', url);
-      console.log('Headers:', DEFAULT_HEADERS);
-      console.log('FormData:', formData);
-
+      const headers = await getAuthHeaders(); // Usando a função para obter os headers com o token
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
@@ -45,26 +45,21 @@ export const audioService = {
         const response = await fetch(url, {
           method: 'POST',
           body: formData,
-          headers: DEFAULT_HEADERS,
+          headers: { // <- Removendo a duplicação do header de autorização aqui
+            ...headers,
+            "content-type": "multipart/form-data",
+          },
           signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
-        console.log('Status da resposta:', response.status);
-
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('Erro na resposta:', errorText);
-          throw new Error(`Erro ao fazer upload do áudio: ${response.status}`);
+          throw new Error(`Erro ao fazer upload do áudio: ${response.status} - ${errorText}`);
         }
 
         const responseData = await response.json();
-        console.log('Resposta do servidor:', responseData);
-
-        return {
-          ...responseData,
-          session_id: sessionId || responseData.session_id
-        };
+        return { ...responseData, session_id: sessionId || responseData.session_id };
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           throw new Error('Timeout ao fazer upload do áudio');
@@ -85,9 +80,7 @@ export const audioService = {
       console.log('Session ID:', sessionId);
 
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
-      if (!fileInfo.exists) {
-        throw new Error('Arquivo não encontrado');
-      }
+      if (!fileInfo.exists) throw new Error('Arquivo não encontrado');
 
       const formData = new FormData();
       formData.append('audio', {
@@ -95,12 +88,12 @@ export const audioService = {
         type: 'audio/m4a',
         name: `chunk_${chunkNumber}.m4a`,
       } as any);
-
       formData.append('session_id', sessionId);
       formData.append('chunk_number', chunkNumber.toString());
       formData.append('is_final', 'true');
 
       const url = `${API_BASE_URL}${API_ENDPOINTS.UPLOAD_AUDIO}`;
+      const headers = await getAuthHeaders(); // Usando a função para obter os headers com o token
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
@@ -108,15 +101,17 @@ export const audioService = {
         const response = await fetch(url, {
           method: 'POST',
           body: formData,
-          headers: DEFAULT_HEADERS,
+          headers: {
+            ...headers,
+            "content-type": "multipart/form-data",
+          },
           signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
-
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Erro ao fazer upload do chunk final: ${response.status}`);
+          throw new Error(`Erro ao fazer upload do chunk final: ${response.status} - ${errorText}`);
         }
 
         return await response.json();
@@ -136,35 +131,26 @@ export const audioService = {
     try {
       console.log('=== INÍCIO DO PROCESSAMENTO ===');
       console.log('Session ID:', sessionId);
-      
-      const url = `${API_BASE_URL}/process/${sessionId}`;
-      console.log('URL do processamento:', url);
 
+      const url = `${API_BASE_URL}/process/${sessionId}`;
+      const headers = await getAuthHeaders(); // Usando a função para obter os headers com o token
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
       try {
         const response = await fetch(url, {
           method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-          },
+          headers,
           signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
-        console.log('Status da resposta:', response.status);
-
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('Erro na resposta:', errorText);
-          throw new Error(`Erro ao processar o áudio: ${response.status}`);
+          throw new Error(`Erro ao processar o áudio: ${response.status} - ${errorText}`);
         }
 
-        const data = await response.json();
-        console.log('Resposta do processamento:', data);
-        console.log('=== FIM DO PROCESSAMENTO ===');
-        return data;
+        return await response.json();
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           throw new Error('Timeout ao processar o áudio');
@@ -180,30 +166,24 @@ export const audioService = {
   async testConnection(): Promise<boolean> {
     try {
       console.log('=== TESTANDO CONEXÃO COM A API ===');
-      console.log('URL base:', API_BASE_URL);
-      
+      const url = `${API_BASE_URL}/health`;
+      const headers = await getAuthHeaders(); // Usando a função para obter os headers com o token
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/health`, {
+        const response = await fetch(url, {
           method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-          },
+          headers,
           signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
-        console.log('Status da resposta:', response.status);
-
         if (!response.ok) {
           throw new Error(`API não está respondendo corretamente: ${response.status}`);
         }
 
-        const data = await response.json();
-        console.log('Resposta da API:', data);
-        console.log('=== CONEXÃO ESTABELECIDA ===');
+        await response.json();
         return true;
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
@@ -216,4 +196,4 @@ export const audioService = {
       return false;
     }
   },
-}; 
+};

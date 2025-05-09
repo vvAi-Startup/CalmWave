@@ -31,12 +31,18 @@ audio_processor = AudioProcessor()
 active_sessions = {}
 
 # Conectar ao MongoDB
-mongo = pymongo.MongoClient()
+mongo = pymongo.MongoClient('mongodb://localhost:27017/')
+db = mongo['calmwave']
+chunks_collection = db['chunks']
+
+
 
 def get_user_id_from_request():
     token = request.headers.get('Authorization')
     if not token:
         return None
+    if token.startswith('Bearer '):
+        token = token[7:]
     payload = verify_token(token)
     if not payload:
         return None
@@ -125,7 +131,7 @@ def upload_audio():
         logger.info(f"Chunk {chunk_number} salvo com sucesso na sessão {session_id}")
 
         # Salvar informações no MongoDB
-        mongo.db.chunks.insert_one({
+        chunks_collection.insert_one({
             "session_id": session_id,
             "user_id": user_id,
             "chunk_number": chunk_number,

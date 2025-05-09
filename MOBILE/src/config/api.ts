@@ -1,3 +1,4 @@
+
 // URL base da API
 export const API_BASE_URL = 'http://10.67.57.147:5000';
 

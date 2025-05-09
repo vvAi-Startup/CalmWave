@@ -17,9 +17,9 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f0f0f0',
+    color: '#000',
     borderRadius: 24,
     paddingHorizontal: 12,
-    paddingVertical: 10,
     height: 42,
     width:'100%'
   },
