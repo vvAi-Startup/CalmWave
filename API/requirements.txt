@@ -1,0 +1,8 @@
+flask
+flask-cors
+Werkzeug
+librosa
+numpy
+docker
+PyJWT
+flask-pymongo 
