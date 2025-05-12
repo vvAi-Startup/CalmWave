@@ -1,5 +1,8 @@
 # CalmWave
 
+![Imagem do WhatsApp de 2025-05-10 à(s) 20 39 35_9e983f48](https://github.com/user-attachments/assets/928bec6a-2edf-4b87-bfaf-b63f32e4fb13)
+
+
 ## Resumo do Projeto
 Este artigo propõe o desenvolvimento de um software para filtragem e processamento de áudio, com o objetivo de auxiliar indivíduos com Transtorno do Processamento Auditivo Central (TPAC). A falta de tecnologias personalizadas e acessíveis para TPAC impacta negativamente no desempenho acadêmico, profissional e social dos indivíduos afetados. Alinhado com a Meta 3 dos ODS da ONU (Saúde e Bem-Estar), o projeto visa criar uma solução que melhore a qualidade de vida, proporcionando um ambiente auditivo mais claro e controlado.
 
