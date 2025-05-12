@@ -113,7 +113,7 @@ Contém códigos e protótipos desenvolvidos anteriormente, mantidos para refer�
 
 
 ## Licença
-Este projeto está licenciado sob a licença MIT.
+Este projeto está licenciado sob a licença GPL-3.0.
 
 ## Autores
 - Equipe CalmWave
