@@ -42,11 +42,9 @@ export default function LoginScreen() {
       if (response.ok) {
         try {
           await AsyncStorage.setItem("@CalmWave:token", data.token);
-          console.log("Token salvo:", data.token); // Verificação após salvar
           alert("Login realizado com sucesso.");
           navigation.navigate("Record");
         } catch (error) {
-          console.error("Erro ao salvar token:", error);
           alert("Erro ao salvar o token de autenticação."); // Alerta específico para erro ao salvar
         }
       } else if (response.status === 401) {
@@ -55,7 +53,6 @@ export default function LoginScreen() {
         alert(data.message || "Erro ao realizar login.");
       }
     } catch (error) {
-      console.error("Erro ao fazer login:", error);
       alert("Ocorreu um erro ao fazer login.");
     } finally {
       setLoading(false);

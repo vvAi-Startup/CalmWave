@@ -27,11 +27,6 @@ API principal do CalmWave, responsável pelo gerenciamento de usuários, sessõe
 - `GET /audio/stream` - Streaming de áudio
 - `GET /audio/history` - Histórico de áudio
 
-### Playlist
-- `GET /playlist` - Listar playlists
-- `POST /playlist` - Criar playlist
-- `PUT /playlist/:id` - Atualizar playlist
-
 ## Como Usar
 
 1. Crie um ambiente virtual:

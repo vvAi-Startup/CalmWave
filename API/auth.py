@@ -5,9 +5,11 @@ from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from pymongo import MongoClient
 from bson.objectid import ObjectId
+from dotenv import load_dotenv
+import os
 
 # Configuração do MongoDB
-client = MongoClient('mongodb://localhost:27017/')
+client = MongoClient(os.getenv('MONGO_URI'))
 db = client['calmwave']
 users_collection = db['users']
 

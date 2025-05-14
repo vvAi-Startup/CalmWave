@@ -18,11 +18,6 @@ export const audioService = {
       const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
       if (!token) throw new Error('Token não encontrado');
 
-      console.log('=== INÍCIO DO UPLOAD ===');
-      console.log('URI do áudio:', audioUri);
-      console.log('Número do chunk:', chunkNumber);
-      console.log('Session ID:', sessionId);
-
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
       if (!fileInfo.exists) throw new Error('Arquivo não encontrado');
 
@@ -74,11 +69,7 @@ export const audioService = {
 
   async uploadFinalChunk(audioUri: string, sessionId: string, chunkNumber: number): Promise<any> {
     try {
-      console.log('=== UPLOAD DO CHUNK FINAL ===');
-      console.log('URI do áudio:', audioUri);
-      console.log('Número do chunk:', chunkNumber);
-      console.log('Session ID:', sessionId);
-
+      
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
       if (!fileInfo.exists) throw new Error('Arquivo não encontrado');
 
@@ -129,8 +120,6 @@ export const audioService = {
 
   async processAudio(sessionId: string): Promise<any> {
     try {
-      console.log('=== INÍCIO DO PROCESSAMENTO ===');
-      console.log('Session ID:', sessionId);
 
       const url = `${API_BASE_URL}/process/${sessionId}`;
       const headers = await getAuthHeaders(); // Usando a função para obter os headers com o token
