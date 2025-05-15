@@ -21,7 +21,7 @@ if 'users' not in db.list_collection_names():
 auth_bp = Blueprint('auth', __name__)
 
 # Chave secreta para assinatura dos tokens (em produção, usar variável de ambiente)
-SECRET_KEY = "sua_chave_secreta_aqui"
+SECRET_KEY = os.getenv('SECRET_KEY')
 
 def generate_token(user_id):
     """
