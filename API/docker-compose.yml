@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    container_name: calmwave_api
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+      - MONGO_URI=mongodb://mongo:27017
+      - SECRET_KEY=calmwavesecret
+    volumes:
+      - ./uploads:/app/uploads
+      - ./processed:/app/processed
+    networks:
+      - backend
+
+  mongo:
+    image: mongo:latest
+    container_name: calmwave_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - backend
+
+networks:
+  backend:
+
+volumes:
+  mongo_data:
