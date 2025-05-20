@@ -5,6 +5,8 @@ import librosa
 from typing import Dict, List, Optional, Tuple
 import shutil
 import json
+from pydub import AudioSegment
+import io
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -38,7 +40,7 @@ class AudioProcessor:
     def save_audio_chunk(self, audio_data: bytes, session_id: str, chunk_number: int,
                         content_type: str = 'audio/wav', filename: str = None) -> str:
         """
-        Salva um chunk de áudio.
+        Salva um chunk de áudio, convertendo para WAV se necessário.
         
         Args:
             audio_data: Dados do áudio em bytes
@@ -62,9 +64,20 @@ class AudioProcessor:
             # Caminho completo do arquivo
             file_path = os.path.join(session_dir, filename)
             
-            # Salvar arquivo
-            with open(file_path, 'wb') as f:
-                f.write(audio_data)
+            # Converter para WAV se necessário
+            if content_type != 'audio/wav':
+                # Criar um buffer de memória com os dados do áudio
+                audio_buffer = io.BytesIO(audio_data)
+                
+                # Carregar o áudio usando pydub
+                audio = AudioSegment.from_file(audio_buffer, format=content_type.split('/')[-1])
+                
+                # Exportar como WAV
+                audio.export(file_path, format='wav')
+            else:
+                # Se já for WAV, salvar diretamente
+                with open(file_path, 'wb') as f:
+                    f.write(audio_data)
             
             # Atualizar dados da sessão
             if session_id not in self.session_data:
