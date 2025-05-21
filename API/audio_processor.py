@@ -1,21 +1,21 @@
 import os
 import logging
 import subprocess
-from typing import Dict, List, Optional
 import shutil
-import io
+from typing import Dict, List, Optional
 
 # Configuração do logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class AudioProcessor:
     """
-    Classe responsável pelo processamento de áudio.
+    Classe responsável pelo processamento de áudio final.
 
     Atributos:
-        upload_folder (str): Diretório para uploads temporários
-        processed_folder (str): Diretório para arquivos processados
-        session_data (Dict): Dados das sessões ativas
+        upload_folder (str): Diretório para uploads temporários do áudio final M4A.
+        processed_folder (str): Diretório para arquivos processados (WAV).
+        session_data (Dict): Dados das sessões ativas (armazena apenas o caminho do áudio final M4A).
     """
 
     def __init__(self, upload_folder: str = 'uploads', processed_folder: str = 'processed'):
@@ -23,8 +23,8 @@ class AudioProcessor:
         Inicializa o processador de áudio.
 
         Args:
-            upload_folder: Diretório para uploads
-            processed_folder: Diretório para arquivos processados
+            upload_folder: Diretório para uploads temporários do M4A final.
+            processed_folder: Diretório para arquivos WAV processados.
         """
         self.upload_folder = upload_folder
         self.processed_folder = processed_folder
@@ -33,55 +33,44 @@ class AudioProcessor:
         # Criar diretórios se não existirem
         os.makedirs(upload_folder, exist_ok=True)
         os.makedirs(processed_folder, exist_ok=True)
+        logger.info(f"Diretórios de áudio inicializados: uploads='{upload_folder}', processed='{processed_folder}'")
 
-    def save_audio_chunk(self, audio_data: bytes, session_id: str, chunk_number: int,
-                         content_type: str = 'audio/m4a', filename: Optional[str] = None) -> str:
+    def save_final_audio(self, audio_data: bytes, session_id: str, filename: str = 'final_audio.m4a') -> str:
         """
-        Salva um chunk de áudio.
+        Salva o arquivo de áudio final M4A para uma sessão.
 
         Args:
-            audio_data: Dados do áudio em bytes
-            session_id: ID da sessão
-            chunk_number: Número do chunk
-            content_type: Tipo do conteúdo (usado para inferir a extensão, mas o arquivo é salvo como .m4a)
-            filename: Nome do arquivo (se não fornecido, será gerado)
+            audio_data: Dados do áudio em bytes.
+            session_id: ID da sessão.
+            filename: Nome do arquivo (padrão 'final_audio.m4a').
 
         Returns:
-            str: Caminho do arquivo salvo
+            str: Caminho completo do arquivo M4A salvo.
         """
         try:
-            # Criar diretório da sessão se não existir
             session_dir = os.path.join(self.upload_folder, session_id)
             os.makedirs(session_dir, exist_ok=True)
 
-            # Definir nome do arquivo
-            if not filename:
-                filename = f'chunk_{chunk_number}.m4a'
-            elif not filename.endswith('.m4a'):
-                # Garantir que o arquivo seja salvo com a extensão .m4a
+            # Garante que o nome do arquivo tenha a extensão .m4a
+            if not filename.endswith('.m4a'):
                 filename = os.path.splitext(filename)[0] + '.m4a'
+            
+            final_m4a_file_path = os.path.join(session_dir, filename)
 
-            # Caminho completo do arquivo
-            file_path = os.path.join(session_dir, filename)
-
-            # Salvar o chunk de áudio em M4A
-            with open(file_path, 'wb') as f:
+            with open(final_m4a_file_path, 'wb') as f:
                 f.write(audio_data)
+            logger.info(f"Áudio final M4A salvo para sessão {session_id} em: {final_m4a_file_path}")
 
-            # Atualizar dados da sessão
-            if session_id not in self.session_data:
-                self.session_data[session_id] = {
-                    'chunks': [],
-                    'status': 'uploading'
-                }
+            # Armazenar o caminho do arquivo M4A final na sessão em memória
+            self.session_data[session_id] = {
+                'final_m4a_path': final_m4a_file_path,
+                'status': 'uploaded'
+            }
 
-            self.session_data[session_id]['chunks'].append(file_path)
-
-            logger.info(f"Chunk {chunk_number} salvo com sucesso para sessão {session_id} em {file_path}")
-            return file_path
+            return final_m4a_file_path
 
         except Exception as e:
-            logger.error(f"Erro ao salvar chunk: {str(e)}")
+            logger.error(f"Erro ao salvar o áudio final para sessão {session_id}: {str(e)}", exc_info=True)
             raise
 
     def convert_m4a_to_wav(self, input_path: str, output_path: str) -> None:
@@ -89,8 +78,8 @@ class AudioProcessor:
         Converte um arquivo M4A para WAV usando FFmpeg.
 
         Args:
-            input_path: Caminho do arquivo M4A de entrada
-            output_path: Caminho do arquivo WAV de saída
+            input_path: Caminho do arquivo M4A de entrada.
+            output_path: Caminho do arquivo WAV de saída.
         """
         try:
             # Comando para converter o arquivo M4A para WAV
@@ -98,7 +87,6 @@ class AudioProcessor:
             command = ['ffmpeg', '-y', '-i', input_path, output_path]
             logger.info(f"Executando comando de conversão M4A para WAV: {' '.join(command)}")
             
-            # Executa o comando e captura a saída para depuração
             result = subprocess.run(command, check=True, capture_output=True, text=True)
             logger.info(f"FFmpeg stdout (M4A to WAV): {result.stdout}")
             logger.info(f"FFmpeg stderr (M4A to WAV): {result.stderr}")
@@ -113,139 +101,43 @@ class AudioProcessor:
             logger.error("FFmpeg não encontrado. Certifique-se de que está instalado e no PATH.")
             raise FileNotFoundError("FFmpeg não encontrado. Por favor, instale-o e adicione-o ao seu PATH.")
         except Exception as e:
-            logger.error(f"Erro inesperado ao converter M4A para WAV: {str(e)}")
+            logger.error(f"Erro inesperado ao converter M4A para WAV: {str(e)}", exc_info=True)
             raise
-
-    def _concatenate_m4a_chunks_with_ffmpeg(self, chunks_m4a_paths: List[str], output_m4a_path: str) -> None:
-        """
-        Combina múltiplos chunks M4A em um único arquivo M4A usando o FFmpeg.
-        Tenta a concatenação direta e, se falhar, usa uma abordagem mais robusta com filtergraph.
-
-        Args:
-            chunks_m4a_paths: Lista de caminhos dos chunks M4A
-            output_m4a_path: Caminho do arquivo M4A de saída
-        """
-        if not chunks_m4a_paths:
-            raise ValueError("Nenhum chunk M4A fornecido para concatenação.")
-
-        # Construir a string de entrada para o demuxer concat
-        # Usamos caminhos absolutos para evitar problemas de diretório
-        concat_input_string = "concat:" + "|".join([os.path.abspath(p) for p in chunks_m4a_paths])
-
-        # --- Tentativa 1: Concatenação direta com demuxer concat (-c copy) ---
-        try:
-            command_demuxer = [
-                'ffmpeg', '-y', '-i', concat_input_string,
-                '-c', 'copy',
-                '-movflags', '+faststart', # Garante que o moov atom esteja no início
-                output_m4a_path
-            ]
-            logger.info(f"Tentando concatenação M4A com demuxer concat: {' '.join(command_demuxer)}")
-            
-            result_demuxer = subprocess.run(command_demuxer, check=True, capture_output=True, text=True)
-            logger.info(f"FFmpeg stdout (demuxer concat): {result_demuxer.stdout}")
-            logger.info(f"FFmpeg stderr (demuxer concat): {result_demuxer.stderr}")
-            logger.info(f"Chunks M4A concatenados com sucesso usando demuxer concat em {output_m4a_path}")
-            return # Sucesso, sair da função
-
-        except subprocess.CalledProcessError as e:
-            logger.warning(f"Falha na concatenação M4A com demuxer concat. Erro: {e.stderr}. Tentando com filtergraph...")
-            # Continuar para a Tentativa 2 se a primeira falhar
-        except FileNotFoundError:
-            logger.error("FFmpeg não encontrado. Certifique-se de que está instalado e no PATH.")
-            raise FileNotFoundError("FFmpeg não encontrado. Por favor, instale-o e adicione-o ao seu PATH.")
-        except Exception as e:
-            logger.warning(f"Erro inesperado na concatenação M4A com demuxer concat: {str(e)}. Tentando com filtergraph...")
-            # Continuar para a Tentativa 2 se a primeira falhar
-
-        # --- Tentativa 2: Concatenação com filtergraph (mais robusta, re-codifica) ---
-        try:
-            filter_parts = []
-            input_maps = []
-            for i, chunk_path in enumerate(chunks_m4a_paths):
-                # Usar amovie para decodificar cada arquivo M4A individualmente
-                filter_parts.append(f"amovie='{os.path.abspath(chunk_path)}':s=0[{i}a]")
-                input_maps.append(f"[{i}a]")
-            
-            # Concatenar os streams de áudio decodificados
-            concat_filter = f"{''.join(input_maps)}concat=n={len(chunks_m4a_paths)}:v=0:a=1[outa]"
-            filter_parts.append(concat_filter)
-            
-            filtergraph = ';'.join(filter_parts)
-
-            command_filtergraph = [
-                'ffmpeg', '-y',
-                '-f', 'lavfi', '-i', filtergraph,
-                '-map', '[outa]',
-                '-c:a', 'aac', '-b:a', '128k', # Re-encode para AAC com bitrate de 128kbps (pode ajustar)
-                '-movflags', '+faststart',
-                output_m4a_path
-            ]
-            logger.info(f"Executando concatenação M4A com filtergraph: {' '.join(command_filtergraph)}")
-            
-            result_filtergraph = subprocess.run(command_filtergraph, check=True, capture_output=True, text=True)
-            logger.info(f"FFmpeg stdout (filtergraph): {result_filtergraph.stdout}")
-            logger.info(f"FFmpeg stderr (filtergraph): {result_filtergraph.stderr}")
-            logger.info(f"Chunks M4A concatenados com sucesso usando filtergraph em {output_m4a_path}")
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Erro final ao concatenar chunks M4A com filtergraph. Comando: {' '.join(e.cmd)}")
-            logger.error(f"FFmpeg stdout: {e.stdout}")
-            logger.error(f"FFmpeg stderr: {e.stderr}")
-            raise Exception(f"Falha na concatenação de M4A (filtergraph): {e.stderr}")
-        except FileNotFoundError:
-            logger.error("FFmpeg não encontrado. Certifique-se de que está instalado e no PATH.")
-            raise FileNotFoundError("FFmpeg não encontrado. Por favor, instale-o e adicione-o ao seu PATH.")
-        except Exception as e:
-            logger.error(f"Erro inesperado ao concatenar M4A com filtergraph: {str(e)}")
-            raise
-
 
     def process_session(self, session_id: str) -> Dict[str, str]:
         """
-        Processa todos os chunks de uma sessão.
-        Primeiro combina todos os chunks M4A em um único arquivo M4A usando FFmpeg,
-        e depois converte este arquivo M4A combinado para WAV.
+        Processa o áudio final de uma sessão, convertendo-o de M4A para WAV.
 
         Args:
-            session_id: ID da sessão
+            session_id: ID da sessão.
 
         Returns:
-            Dict[str, str]: Resultado do processamento
+            Dict[str, str]: Resultado do processamento, incluindo o caminho do arquivo WAV.
         """
         try:
             if session_id not in self.session_data:
+                logger.error(f"Sessão {session_id} não encontrada para processamento.")
                 return {
                     'status': 'error',
-                    'message': 'Sessão não encontrada'
+                    'message': 'Sessão não encontrada ou áudio não foi salvo.'
                 }
 
-            session_dir = os.path.join(self.upload_folder, session_id)
-            if not os.path.exists(session_dir):
+            final_m4a_path = self.session_data[session_id].get('final_m4a_path')
+            if not final_m4a_path or not os.path.exists(final_m4a_path):
+                logger.error(f"Caminho do áudio final M4A não encontrado ou arquivo ausente para sessão {session_id}.")
                 return {
                     'status': 'error',
-                    'message': 'Diretório da sessão não encontrado'
+                    'message': 'Caminho do áudio final M4A não encontrado ou arquivo ausente.'
                 }
 
-            chunks_m4a = self.session_data[session_id]['chunks']
-            if not chunks_m4a:
-                return {
-                    'status': 'error',
-                    'message': 'Nenhum chunk encontrado para processamento'
-                }
-
-            # 1. Combinar todos os chunks M4A em um único arquivo M4A usando FFmpeg
-            combined_m4a_path = os.path.join(session_dir, f'combined_{session_id}.m4a')
-            self._concatenate_m4a_chunks_with_ffmpeg(chunks_m4a, combined_m4a_path)
-            
-            # 2. Converter o arquivo M4A combinado para WAV
+            # Converter o arquivo M4A final para WAV
             final_wav_output_path = os.path.join(self.processed_folder, f'final_processed_{session_id}.wav')
-            self.convert_m4a_to_wav(combined_m4a_path, final_wav_output_path)
+            self.convert_m4a_to_wav(final_m4a_path, final_wav_output_path)
 
             self.session_data[session_id]['status'] = 'processed'
             self.session_data[session_id]['output_path'] = final_wav_output_path
-            self.session_data[session_id]['combined_m4a_path'] = combined_m4a_path # Guardar para limpeza
 
+            logger.info(f"Sessão {session_id} processada com sucesso. WAV em: {final_wav_output_path}")
             return {
                 'status': 'success',
                 'message': 'Áudio processado com sucesso',
@@ -253,7 +145,7 @@ class AudioProcessor:
             }
 
         except Exception as e:
-            logger.error(f"Erro ao processar sessão {session_id}: {str(e)}")
+            logger.error(f"Erro ao processar sessão {session_id}: {str(e)}", exc_info=True)
             return {
                 'status': 'error',
                 'message': f"Erro no processamento da sessão: {str(e)}"
@@ -274,69 +166,47 @@ class AudioProcessor:
             return {
                 'status': 'success',
                 'session_status': session_info.get('status', 'unknown'),
-                'chunks_count': len(session_info.get('chunks', [])),
                 'output_path': session_info.get('output_path', 'N/A')
             }
 
         except Exception as e:
-            logger.error(f"Erro ao obter status da sessão: {str(e)}")
+            logger.error(f"Erro ao obter status da sessão {session_id}: {str(e)}", exc_info=True)
             return {
                 'status': 'error',
                 'message': str(e)
             }
 
-    def get_session_chunks(self, session_id: str) -> List[str]:
+    def get_session_final_audio_path(self, session_id: str) -> Optional[str]:
         """
-        Obtém a lista de caminhos dos chunks de uma sessão.
+        Obtém o caminho do arquivo M4A final de uma sessão.
         """
         try:
-            if session_id not in self.session_data:
-                return []
-
-            return self.session_data[session_id]['chunks']
-
+            return self.session_data.get(session_id, {}).get('final_m4a_path')
         except Exception as e:
-            logger.error(f"Erro ao obter chunks da sessão: {str(e)}")
-            return []
+            logger.error(f"Erro ao obter caminho do áudio final para sessão {session_id}: {str(e)}", exc_info=True)
+            return None
 
     def cleanup(self, session_id: str) -> None:
         """
-        Limpa os recursos de uma sessão (arquivos temporários e dados da sessão).
+        Limpa os recursos temporários de uma sessão.
+        O arquivo WAV final processado NÃO será removido.
         """
         try:
-            # Remover diretório da sessão de uploads
+            # Remover diretório da sessão de uploads (onde o M4A final está)
             session_upload_dir = os.path.join(self.upload_folder, session_id)
             if os.path.exists(session_upload_dir):
                 shutil.rmtree(session_upload_dir)
-                logger.info(f"Diretório de upload da sessão {session_id} removido.")
+                logger.info(f"Diretório de upload da sessão {session_id} removido (inclui M4A final).")
 
-            # Remover arquivo M4A combinado intermediário, se existir
-            if session_id in self.session_data and 'combined_m4a_path' in self.session_data[session_id]:
-                combined_m4a = self.session_data[session_id]['combined_m4a_path']
-                if os.path.exists(combined_m4a):
-                    os.remove(combined_m4a)
-                    logger.info(f"Arquivo M4A combinado {combined_m4a} removido.")
+            # O arquivo WAV final (final_processed_{session_id}.wav) permanece na pasta 'processed'.
 
-            # Remover arquivo processado final (WAV)
-            if session_id in self.session_data and 'output_path' in self.session_data[session_id]:
-                processed_file = self.session_data[session_id]['output_path']
-                if os.path.exists(processed_file):
-                    os.remove(processed_file)
-                    logger.info(f"Arquivo processado {processed_file} removido.")
-            else:
-                # Caso o output_path não esteja na sessão, tentar um nome padrão
-                processed_file_fallback = os.path.join(self.processed_folder, f'final_processed_{session_id}.wav')
-                if os.path.exists(processed_file_fallback):
-                    os.remove(processed_file_fallback)
-                    logger.info(f"Arquivo processado de fallback {processed_file_fallback} removido.")
-
-            # Remover dados da sessão
+            # Remover dados da sessão da memória
             if session_id in self.session_data:
                 del self.session_data[session_id]
-                logger.info(f"Dados da sessão {session_id} removidos.")
+                logger.info(f"Dados da sessão {session_id} removidos da memória.")
 
-            logger.info(f"Recursos da sessão {session_id} limpos com sucesso")
+            logger.info(f"Recursos temporários da sessão {session_id} limpos com sucesso. Arquivo WAV final mantido.")
 
         except Exception as e:
-            logger.error(f"Erro ao limpar recursos da sessão {session_id}: {str(e)}")
+            logger.error(f"Erro ao limpar recursos da sessão {session_id}: {str(e)}", exc_info=True)
             # Não levantar exceção para que a limpeza não interrompa o fluxo principal

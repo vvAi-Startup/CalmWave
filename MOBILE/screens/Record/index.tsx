@@ -1,35 +1,33 @@
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TouchableOpacity, Image, Alert, ActivityIndicator } from "react-native";
-import { styles } from "./styles";
-import { Nav } from "../../components/Nav";
+import { styles } from "./styles"; // Assuming styles are defined here
+import { Nav } from "../../components/Nav"; // Assuming Nav component exists
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { audioService } from '../../src/services/audioService';
+import { audioService } from '../../src/services/audioService'; // Updated audioService
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_BASE_URL } from "@/src/config/api";
+import { API_BASE_URL } from "@/src/config/api"; // Assuming API_BASE_URL is defined here
 
 export default function RecordScreen() {
   const [waveform, setWaveform] = useState<number[]>([]);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [audioUri, setAudioUri] = useState<string | null>(null); // Local URI of the recorded M4A
   const [timer, setTimer] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // For backend processing (conversion)
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false); // For local file upload to backend
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [isCheckingConnection, setIsCheckingConnection] = useState(false);
 
-  const chunkInterval = useRef<NodeJS.Timeout | null>(null);
-  const lastChunkTime = useRef<number>(0);
-  const chunkNumber = useRef<number>(0);
-  const lastChunkUri = useRef<string | null>(null);
-  const uploadQueue = useRef<boolean>(false);
-  const sessionDirectory = useRef<string | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  // Refs for managing intervals and directories
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionDirectory = useRef<string | null>(null); // Directory for the final M4A before upload
+  const recordingRef = useRef<Audio.Recording | null>(null); // To hold the current recording object
 
+  // Effect to create the main audio directory on component mount
   useEffect(() => {
     const createAudioDirectory = async () => {
       try {
@@ -37,48 +35,61 @@ export default function RecordScreen() {
         const dirInfo = await FileSystem.getInfoAsync(audioDir);
         if (!dirInfo.exists) {
           await FileSystem.makeDirectoryAsync(audioDir, { intermediates: true });
+          console.log('Main audio directory created:', audioDir);
         }
       } catch (error) {
-        console.error('Erro ao criar pasta:', error);
+        console.error('Error creating main audio directory:', error);
       }
     };
     createAudioDirectory();
   }, []);
 
+  // Effect for waveform animation
   useEffect(() => {
-    const interval = setInterval(() => {
+    const waveformUpdateInterval = setInterval(() => {
       if (isRecording) {
+        // Generate random waveform heights for visual effect
         const newWaveform = Array.from({ length: 30 }, () => Math.random() * 40 + 10);
         setWaveform(newWaveform);
+      } else {
+        setWaveform([]); // Clear waveform when not recording
       }
     }, 200);
-    return () => clearInterval(interval);
+    return () => clearInterval(waveformUpdateInterval);
   }, [isRecording]);
 
+  // Effect for recording timer
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
     if (isRecording) {
-      interval = setInterval(() => {
+      timerIntervalRef.current = setInterval(() => {
         setTimer((prev) => prev + 1);
       }, 1000);
+    } else {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     }
     return () => {
-      if (interval) clearInterval(interval);
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
   }, [isRecording]);
 
+  // Effect to check API connection on component mount
   useEffect(() => {
     checkApiConnection();
   }, []);
 
+  // Effect to keep recordingRef updated with the current recording state
   useEffect(() => {
     recordingRef.current = recording;
   }, [recording]);
 
+  /**
+   * Checks the connection status with the backend API.
+   */
   const checkApiConnection = async () => {
     try {
       setIsCheckingConnection(true);
       const token = await AsyncStorage.getItem('@CalmWave:token');
+      // Using direct fetch for health check as audioService.testConnection also uses it
       const response = await fetch(`${API_BASE_URL}/health`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -106,49 +117,9 @@ export default function RecordScreen() {
     }
   };
 
-  const processAudioChunk = async (currentSessionId: string) => {
-    try {
-      const currentRecording = recordingRef.current;
-      if (!currentRecording || isUploading || uploadQueue.current) return;
-
-      uploadQueue.current = true;
-      setIsUploading(true);
-      setUploadError(null);
-
-      const currentUri = await currentRecording.getURI();
-      if (!currentUri) throw new Error('URI do áudio não encontrada');
-
-      const chunkFileName = `chunk_${chunkNumber.current}.m4a`;
-      const chunkUri = `${sessionDirectory.current}/${chunkFileName}`;
-
-      await FileSystem.copyAsync({ from: currentUri, to: chunkUri });
-
-      const fileInfo = await FileSystem.getInfoAsync(chunkUri);
-      if (!fileInfo.exists) throw new Error('Chunk não criado corretamente');
-
-      await audioService.uploadAudio(chunkUri, currentSessionId, chunkNumber.current);
-
-      if (lastChunkUri.current) {
-        try {
-          await FileSystem.deleteAsync(lastChunkUri.current);
-        } catch (error) {
-          console.warn('Erro ao deletar chunk anterior:', error);
-        }
-      }
-
-      lastChunkUri.current = chunkUri;
-      chunkNumber.current += 1;
-      lastChunkTime.current = Date.now();
-
-    } catch (error) {
-      console.error('Erro ao processar chunk:', error);
-      setUploadError(error instanceof Error ? error.message : 'Erro desconhecido');
-    } finally {
-      setIsUploading(false);
-      uploadQueue.current = false;
-    }
-  };
-
+  /**
+   * Starts the audio recording.
+   */
   async function startRecording() {
     if (!isConnected) {
       Alert.alert('Erro de Conexão', 'Não foi possível conectar com o servidor.', [
@@ -177,59 +148,68 @@ export default function RecordScreen() {
       });
 
       const newSessionId = `session_${Date.now()}`;
+      // Create a new recording instance (records to M4A/AAC by default)
       const { recording: newRecording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
 
+      // Create a session-specific directory for the final audio file
       const sessionDir = `${FileSystem.documentDirectory}audios/${newSessionId}`;
       await FileSystem.makeDirectoryAsync(sessionDir, { intermediates: true });
+      console.log('Session directory created:', sessionDir);
 
       setRecording(newRecording);
       recordingRef.current = newRecording;
       setSessionId(newSessionId);
       setIsRecording(true);
       setTimer(0);
-      lastChunkTime.current = Date.now();
-      chunkNumber.current = 0;
-      lastChunkUri.current = null;
       sessionDirectory.current = sessionDir;
       setUploadError(null);
 
-      chunkInterval.current = setInterval(async () => {
-        const timeSinceLastChunk = Date.now() - lastChunkTime.current;
-        if (timeSinceLastChunk >= 5000) {
-          await processAudioChunk(newSessionId);
-        }
-      }, 1000);
-
     } catch (err) {
-      console.error('Erro ao iniciar gravação:', err);
+      console.error('Error starting recording:', err);
       Alert.alert('Erro', 'Não foi possível iniciar a gravação');
     }
   }
 
+  /**
+   * Stops the audio recording, uploads the final audio, and triggers backend processing.
+   */
   async function stopRecording() {
     if (!recording) return;
 
     try {
-      if (chunkInterval.current) {
-        clearInterval(chunkInterval.current);
-        chunkInterval.current = null;
+      // Clear the timer interval
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
       }
 
       await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      const uri = recording.getURI(); // Get the local URI of the complete M4A file
       setAudioUri(uri);
       setRecording(null);
       setIsRecording(false);
 
       if (uri && sessionId && sessionDirectory.current) {
-        setIsProcessing(true);
+        setIsProcessing(true); // Indicate that backend processing is starting
         try {
-          const finalChunkUri = `${sessionDirectory.current}/chunk_${chunkNumber.current}.m4a`;
-          await FileSystem.copyAsync({ from: uri, to: finalChunkUri });
+          // Define the filename for the complete audio file
+          const finalAudioFileName = `final_audio.m4a`;
+          const finalAudioPath = `${sessionDirectory.current}/${finalAudioFileName}`;
 
-          await audioService.uploadFinalChunk(finalChunkUri, sessionId, chunkNumber.current);
-          await processAudioChunk(sessionId);
-          await audioService.processAudio(sessionId);
+          // Copy the recorded audio to its final local path before uploading
+          await FileSystem.copyAsync({ from: uri, to: finalAudioPath });
+          console.log('Final audio saved locally:', finalAudioPath);
+
+          setIsUploading(true);
+          setUploadError(null);
+          // Upload the complete audio file to the server
+          await audioService.uploadAudio(finalAudioPath, sessionId); 
+          setIsUploading(false);
+          console.log('Final audio uploaded to server.');
+          
+          // Trigger backend processing (conversion to WAV)
+          const processResult = await audioService.processAudio(sessionId);
+          console.log('Backend processing result:', processResult);
 
           Alert.alert('Sucesso', 'Áudio processado com sucesso! Deseja abrir a pasta?', [
             { text: 'Não', style: 'cancel' },
@@ -237,26 +217,30 @@ export default function RecordScreen() {
               text: 'Sim',
               onPress: async () => {
                 try {
-                  await Sharing.shareAsync(finalChunkUri);
+                  // Share the local M4A file (before it's deleted)
+                  await Sharing.shareAsync(finalAudioPath);
                 } catch (error) {
-                  console.error('Erro ao abrir pasta:', error);
-                  Alert.alert('Erro', 'Não foi possível abrir a pasta');
+                  console.error('Erro ao abrir pasta para compartilhamento:', error);
+                  Alert.alert('Erro', 'Não foi possível abrir a pasta para compartilhamento');
                 }
               }
             }
           ]);
         } catch (error) {
-          console.error('Erro no processamento:', error);
+          console.error('Erro no processamento ou upload:', error);
+          setUploadError(error instanceof Error ? error.message : 'Erro desconhecido');
           Alert.alert('Erro', 'Não foi possível processar o áudio');
         } finally {
           setIsProcessing(false);
           setSessionId(null);
           sessionDirectory.current = null;
-          if (lastChunkUri.current) {
+          // Clean up the local audio file after upload and processing
+          if (finalAudioPath) {
             try {
-              await FileSystem.deleteAsync(lastChunkUri.current);
+              await FileSystem.deleteAsync(finalAudioPath);
+              console.log('Arquivo de áudio local final deletado:', finalAudioPath);
             } catch (error) {
-              console.warn('Erro ao deletar último chunk:', error);
+              console.warn('Erro ao deletar arquivo de áudio local final:', error);
             }
           }
         }
@@ -267,6 +251,11 @@ export default function RecordScreen() {
     }
   }
 
+  /**
+   * Formats time in seconds to MM:SS format.
+   * @param seconds Total seconds.
+   * @returns Formatted time string.
+   */
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
@@ -289,7 +278,7 @@ export default function RecordScreen() {
         ) : null}
       </View>
       <View style={styles.recordContainer}>
-        <TouchableOpacity style={styles.recordButton} onPress={startRecording} disabled={isProcessing}>
+        <TouchableOpacity style={styles.recordButton} onPress={startRecording} disabled={isProcessing || isRecording}>
           <Text style={styles.recordButtonText}>Começar Gravação</Text>
           <Image source={require("../../assets/logos/mic.png")} style={styles.recordButtonIcon} />
         </TouchableOpacity>
@@ -298,7 +287,7 @@ export default function RecordScreen() {
             <View key={index} style={[styles.waveformBar, { height }]} />
           ))}
         </View>
-        <TouchableOpacity style={styles.stopButton} onPress={stopRecording} disabled={isProcessing}>
+        <TouchableOpacity style={styles.stopButton} onPress={stopRecording} disabled={isProcessing || !isRecording}>
           <View style={styles.stopButtonOuter}>
             <View style={styles.stopButtonInner}>
               <View style={styles.stopButtonSquad}></View>

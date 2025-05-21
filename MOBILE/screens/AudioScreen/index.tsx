@@ -1,68 +1,66 @@
-import React, { useEffect, useState } from 'react';
-import { FlatList, SafeAreaView, Text, Alert, View } from 'react-native';
-import AudioItem from '../../components/ListMusic'; 
-import styles from './styles';
-import { Nav } from '../../components/Nav';
-import { useNavContext } from '@/context/navContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { FlatList, SafeAreaView, Text, Alert, View, RefreshControl, TouchableOpacity } from 'react-native';
+import AudioItem from '../../components/ListMusic'; // Assuming AudioItem component exists
+import styles from './styles'; // Assuming styles are defined here
+import { Nav } from '../../components/Nav'; // Assuming Nav component exists
+import { useNavContext } from '@/context/navContext'; // Assuming NavContext exists
 import { Audio, AVPlaybackStatus } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
 import { Ionicons } from '@expo/vector-icons';
-
-type AudioFile = {
-  id: string;
-  title: string;
-  path: string;
-};
+import { audioService, AudioListItem } from '../../src/services/audioService'; // Import AudioListItem and audioService
 
 export default function AudioListScreen() {
   const { setSelecionado } = useNavContext();
-  const [audioList, setAudioList] = useState<AudioFile[]>([]);
+  const [audioList, setAudioList] = useState<AudioListItem[]>([]); // Now uses AudioListItem type
   const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
-  const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null);
+  const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null); // Stores session_id of playing audio
+  const [refreshing, setRefreshing] = useState(false); // For pull-to-refresh
 
   useEffect(() => {
     setSelecionado('audio');
     loadAudioFiles();
     return () => {
       setSelecionado('home');
+      // Unload sound when component unmounts
       if (currentSound) {
         currentSound.unloadAsync();
       }
     };
   }, [setSelecionado]);
 
-  const loadAudioFiles = async () => {
+  /**
+   * Loads audio files from the backend API.
+   */
+  const loadAudioFiles = useCallback(async () => {
+    setRefreshing(true);
     try {
-      const audioDir = `${FileSystem.documentDirectory}audios`;
-      const dirInfo = await FileSystem.getInfoAsync(audioDir);
-      
-      if (dirInfo.exists) {
-        const files = await FileSystem.readDirectoryAsync(audioDir);
-        const audioFiles = files
-          .filter(file => file.endsWith('.m4a'))
-          .map((file, index) => ({
-            id: String(index + 1),
-            title: `Gravação ${index + 1}`,
-            path: `${audioDir}/${file}`
-          }));
-        setAudioList(audioFiles);
-      }
+      const fetchedAudios = await audioService.listAudios();
+      // Sort by creation date, newest first
+      fetchedAudios.sort((a, b) => b.created_at - a.created_at);
+      setAudioList(fetchedAudios);
+      console.log('Audios loaded from backend:', fetchedAudios);
     } catch (error) {
-      console.error('Erro ao carregar áudios:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os áudios');
+      console.error('Erro ao carregar áudios do backend:', error);
+      Alert.alert('Erro', 'Não foi possível carregar os áudios do servidor.');
+    } finally {
+      setRefreshing(false);
     }
-  };
+  }, []);
 
+  /**
+   * Handles playing/pausing an audio file from its URL.
+   * @param path The URL of the audio file (from backend).
+   * @param id The MongoDB _id of the audio item.
+   */
   const handlePlay = async (path: string, id: string) => {
     try {
-      // Se já estiver tocando este áudio, pausa
+      // If already playing this audio, pause it
       if (currentlyPlaying === id && currentSound) {
         try {
           await currentSound.pauseAsync();
           setCurrentlyPlaying(null);
         } catch (error) {
           console.log('Erro ao pausar áudio:', error);
-          // Se houver erro ao pausar, tenta recarregar o áudio
+          // If error pausing, try to unload and reset
           await currentSound.unloadAsync();
           setCurrentSound(null);
           setCurrentlyPlaying(null);
@@ -70,7 +68,7 @@ export default function AudioListScreen() {
         return;
       }
 
-      // Se estiver tocando outro áudio, para ele
+      // If another audio is playing, stop it
       if (currentSound) {
         try {
           await currentSound.stopAsync();
@@ -81,14 +79,7 @@ export default function AudioListScreen() {
         setCurrentSound(null);
       }
 
-      // Verifica se o arquivo existe antes de tentar reproduzir
-      const fileInfo = await FileSystem.getInfoAsync(path);
-      if (!fileInfo.exists) {
-        Alert.alert('Erro', 'Arquivo de áudio não encontrado');
-        return;
-      }
-
-      // Carrega e toca o novo áudio
+      // Load and play the new audio from the URL
       const { sound } = await Audio.Sound.createAsync(
         { uri: path },
         { shouldPlay: true }
@@ -97,7 +88,7 @@ export default function AudioListScreen() {
       setCurrentSound(sound);
       setCurrentlyPlaying(id);
 
-      // Quando o áudio terminar
+      // Set a callback for when the audio finishes playing
       sound.setOnPlaybackStatusUpdate(async (status: AVPlaybackStatus) => {
         if (!status.isLoaded) return;
         if (status.didJustFinish) {
@@ -105,40 +96,61 @@ export default function AudioListScreen() {
           try {
             await sound.unloadAsync();
           } catch (error) {
-            console.log('Erro ao descarregar áudio:', error);
+            console.log('Erro ao descarregar áudio após término:', error);
           }
         }
       });
     } catch (error) {
       console.error('Erro ao reproduzir áudio:', error);
-      Alert.alert('Erro', 'Não foi possível reproduzir o áudio');
-      // Limpa o estado em caso de erro
+      Alert.alert('Erro', 'Não foi possível reproduzir o áudio. Verifique sua conexão.');
+      // Clear state in case of error
       setCurrentSound(null);
       setCurrentlyPlaying(null);
     }
   };
 
-  const handleDelete = async (id: string, path: string) => {
-    try {
-      // Se estiver tocando o áudio que será excluído, para a reprodução
-      if (currentlyPlaying === id && currentSound) {
-        await currentSound.stopAsync();
-        await currentSound.unloadAsync();
-        setCurrentSound(null);
-        setCurrentlyPlaying(null);
-      }
+  /**
+   * Handles deleting an audio file from the backend.
+   * @param id The MongoDB _id of the audio item.
+   * @param sessionId The session_id associated with the audio.
+   */
+  const handleDelete = async (id: string, sessionId: string) => {
+    Alert.alert(
+      'Confirmar Exclusão',
+      'Tem certeza que deseja excluir esta gravação?',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Excluir',
+          onPress: async () => {
+            try {
+              // If playing the audio that will be deleted, stop playback
+              if (currentlyPlaying === id && currentSound) {
+                await currentSound.stopAsync();
+                await currentSound.unloadAsync();
+                setCurrentSound(null);
+                setCurrentlyPlaying(null);
+              }
 
-      // Exclui o arquivo
-      await FileSystem.deleteAsync(path);
-      
-      // Atualiza a lista
-      setAudioList(prevList => prevList.filter(audio => audio.id !== id));
-      
-      Alert.alert('Sucesso', 'Áudio excluído com sucesso!');
-    } catch (error) {
-      console.error('Erro ao excluir áudio:', error);
-      Alert.alert('Erro', 'Não foi possível excluir o áudio');
-    }
+              // Call the backend API to delete the audio
+              await audioService.deleteAudio(sessionId); // Backend uses session_id for deletion
+              
+              // Update the local list
+              setAudioList(prevList => prevList.filter(audio => audio.id !== id));
+              
+              Alert.alert('Sucesso', 'Áudio excluído com sucesso!');
+            } catch (error) {
+              console.error('Erro ao excluir áudio:', error);
+              Alert.alert('Erro', 'Não foi possível excluir o áudio do servidor.');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const EmptyList = () => (
@@ -146,8 +158,12 @@ export default function AudioListScreen() {
       <Ionicons name="mic-outline" size={64} color="#391C73" />
       <Text style={styles.emptyTitle}>Nenhum áudio encontrado</Text>
       <Text style={styles.emptyText}>
-        Para começar a gravar, vá para a tela inicial e toque no botão de gravação
+        Para começar a gravar, vá para a tela inicial e toque no botão de gravação.
+        Os áudios gravados aparecerão aqui após o processamento.
       </Text>
+      <TouchableOpacity onPress={loadAudioFiles} style={styles.refreshButton}>
+        <Text style={styles.refreshButtonText}>Recarregar</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -162,7 +178,7 @@ export default function AudioListScreen() {
             title={item.title}
             isPlaying={currentlyPlaying === item.id}
             onPlay={() => handlePlay(item.path, item.id)}
-            onDelete={() => handleDelete(item.id, item.path)}
+            onDelete={() => handleDelete(item.id, item.session_id)} // Pass session_id for deletion
           />
         )}
         contentContainerStyle={[
@@ -170,6 +186,9 @@ export default function AudioListScreen() {
           audioList.length === 0 && styles.emptyListContainer
         ]}
         ListEmptyComponent={EmptyList}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={loadAudioFiles} />
+        }
       />
       <Nav />
     </SafeAreaView>
