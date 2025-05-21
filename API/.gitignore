@@ -39,5 +39,3 @@ build/
 dist/
 *.egg-info/
 .eggs/
-
-.env
