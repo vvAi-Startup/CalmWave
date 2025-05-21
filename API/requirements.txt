@@ -9,3 +9,4 @@ PyJWT
 flask-pymongo 
 python-dotenv
 pydub
+soundfile
