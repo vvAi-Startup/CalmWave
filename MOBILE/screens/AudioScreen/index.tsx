@@ -7,23 +7,20 @@ import { useNavContext } from '@/context/navContext'; // Assuming NavContext exi
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { audioService, AudioListItem } from '../../src/services/audioService'; // Import AudioListItem and audioService
+import AudioPlayer from '../../components/MusicPLayer/AudioPlayer';
 
 export default function AudioListScreen() {
   const { setSelecionado } = useNavContext();
-  const [audioList, setAudioList] = useState<AudioListItem[]>([]); // Now uses AudioListItem type
-  const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
-  const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null); // Stores session_id of playing audio
-  const [refreshing, setRefreshing] = useState(false); // For pull-to-refresh
+  const [audioList, setAudioList] = useState<AudioListItem[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedAudioUrl, setSelectedAudioUrl] = useState<string | null>(null);
+  const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null);
 
   useEffect(() => {
     setSelecionado('audio');
     loadAudioFiles();
     return () => {
       setSelecionado('home');
-      // Unload sound when component unmounts
-      if (currentSound) {
-        currentSound.unloadAsync();
-      }
     };
   }, [setSelecionado]);
 
@@ -34,7 +31,6 @@ export default function AudioListScreen() {
     setRefreshing(true);
     try {
       const fetchedAudios = await audioService.listAudios();
-      // Sort by creation date, newest first
       fetchedAudios.sort((a, b) => b.created_at - a.created_at);
       setAudioList(fetchedAudios);
       console.log('Audios loaded from backend:', fetchedAudios);
@@ -51,61 +47,13 @@ export default function AudioListScreen() {
    * @param path The URL of the audio file (from backend).
    * @param id The MongoDB _id of the audio item.
    */
-  const handlePlay = async (path: string, id: string) => {
-    try {
-      // If already playing this audio, pause it
-      if (currentlyPlaying === id && currentSound) {
-        try {
-          await currentSound.pauseAsync();
-          setCurrentlyPlaying(null);
-        } catch (error) {
-          console.log('Erro ao pausar áudio:', error);
-          // If error pausing, try to unload and reset
-          await currentSound.unloadAsync();
-          setCurrentSound(null);
-          setCurrentlyPlaying(null);
-        }
-        return;
-      }
-
-      // If another audio is playing, stop it
-      if (currentSound) {
-        try {
-          await currentSound.stopAsync();
-          await currentSound.unloadAsync();
-        } catch (error) {
-          console.log('Erro ao parar áudio anterior:', error);
-        }
-        setCurrentSound(null);
-      }
-
-      // Load and play the new audio from the URL
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: path },
-        { shouldPlay: true }
-      );
-      
-      setCurrentSound(sound);
-      setCurrentlyPlaying(id);
-
-      // Set a callback for when the audio finishes playing
-      sound.setOnPlaybackStatusUpdate(async (status: AVPlaybackStatus) => {
-        if (!status.isLoaded) return;
-        if (status.didJustFinish) {
-          setCurrentlyPlaying(null);
-          try {
-            await sound.unloadAsync();
-          } catch (error) {
-            console.log('Erro ao descarregar áudio após término:', error);
-          }
-        }
-      });
-    } catch (error) {
-      console.error('Erro ao reproduzir áudio:', error);
-      Alert.alert('Erro', 'Não foi possível reproduzir o áudio. Verifique sua conexão.');
-      // Clear state in case of error
-      setCurrentSound(null);
-      setCurrentlyPlaying(null);
+  const handlePlay = (path: string, id: string) => {
+    if (selectedAudioId === id) {
+      setSelectedAudioUrl(null);
+      setSelectedAudioId(null);
+    } else {
+      setSelectedAudioUrl(path);
+      setSelectedAudioId(id);
     }
   };
 
@@ -127,20 +75,12 @@ export default function AudioListScreen() {
           text: 'Excluir',
           onPress: async () => {
             try {
-              // If playing the audio that will be deleted, stop playback
-              if (currentlyPlaying === id && currentSound) {
-                await currentSound.stopAsync();
-                await currentSound.unloadAsync();
-                setCurrentSound(null);
-                setCurrentlyPlaying(null);
+              if (selectedAudioId === id) {
+                setSelectedAudioUrl(null);
+                setSelectedAudioId(null);
               }
-
-              // Call the backend API to delete the audio
-              await audioService.deleteAudio(sessionId); // Backend uses session_id for deletion
-              
-              // Update the local list
+              await audioService.deleteAudio(sessionId);
               setAudioList(prevList => prevList.filter(audio => audio.id !== id));
-              
               Alert.alert('Sucesso', 'Áudio excluído com sucesso!');
             } catch (error) {
               console.error('Erro ao excluir áudio:', error);
@@ -176,9 +116,9 @@ export default function AudioListScreen() {
         renderItem={({ item }) => (
           <AudioItem
             title={item.title}
-            isPlaying={currentlyPlaying === item.id}
+            isPlaying={selectedAudioId === item.id}
             onPlay={() => handlePlay(item.path, item.id)}
-            onDelete={() => handleDelete(item.id, item.session_id)} // Pass session_id for deletion
+            onDelete={() => handleDelete(item.id, item.session_id)}
           />
         )}
         contentContainerStyle={[
@@ -189,6 +129,14 @@ export default function AudioListScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={loadAudioFiles} />
         }
+      />
+      <AudioPlayer
+        uri={selectedAudioUrl || ''}
+        visible={!!selectedAudioUrl}
+        onClose={() => {
+          setSelectedAudioUrl(null);
+          setSelectedAudioId(null);
+        }}
       />
       <Nav />
     </SafeAreaView>

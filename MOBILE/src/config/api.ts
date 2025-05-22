@@ -1,6 +1,6 @@
-import {API_URL} from '@env'
+// import {API_URL} from '../../.env'
 // URL base da API
-export const API_BASE_URL = API_URL ;
+export const API_BASE_URL = 'http://10.67.57.157:5000';
 
 export const API_ENDPOINTS = {
   UPLOAD_AUDIO: '/upload',
