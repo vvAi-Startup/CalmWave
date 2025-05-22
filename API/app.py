@@ -76,7 +76,6 @@ def health_check():
     """
     return jsonify({'status': 'ok', 'message': 'API is running!'}), 200
 
-# CORREÇÃO: Adicionado o decorator @app.route que estava faltando
 @app.route('/upload', methods=['POST'])
 def upload_audio():
     """
@@ -85,11 +84,17 @@ def upload_audio():
     and then sends the WAV to an external denoising microservice.
     """
     try:
-        # Get user_id from JWT token and authenticate
-        user_id = get_user_id_from_request()
+        # Tenta obter user_id do formulário primeiro
+        user_id = request.form.get('user_id')
+        
+        # Se não estiver no formulário, tenta do token JWT (se presente)
         if not user_id:
-            logger.warning("Attempted upload without authentication or invalid token.")
-            return jsonify({'error': 'User not authenticated or invalid token'}), 401
+            user_id = get_user_id_from_request()
+        
+        # Se user_id ainda for None, atribui um valor padrão
+        if not user_id:
+            user_id = "anonymous_user" # Ou str(uuid.uuid4()) para um ID único a cada vez
+            logger.info(f"No user_id provided or authenticated. Assigning default: {user_id}")
 
         if 'audio' not in request.files:
             logger.error("No audio file sent in the request.")
@@ -142,12 +147,20 @@ def upload_audio():
         logger.info(f"Audio converted to WAV for session {session_id} at: {processed_wav_path}")
 
         # Send the processed WAV audio to the external microservice
-        denoise_service_url = "http://10.67.57.148:8000/audio/denoise"
+        denoise_service_url = "http://10.67.57.148:8000/audio/denoise" 
         try:
+            # Dados adicionais a serem enviados junto com o arquivo
+            additional_data = {
+                'session_id': session_id,
+                'user_id': user_id, # user_id obtido (do formulário, token ou padrão)
+                'file_name': os.path.basename(processed_wav_path) # Nome do arquivo WAV
+            }
+
             with open(processed_wav_path, 'rb') as f:
                 denoise_response = requests.post(
                     denoise_service_url, 
                     files={'audio': (os.path.basename(processed_wav_path), f.read(), 'audio/wav')},
+                    data=additional_data, # Envia os dados adicionais
                     timeout=60 # Adicione um timeout para a requisição
                 )
             denoise_response.raise_for_status() # Levanta um erro para códigos de status HTTP 4xx/5xx
@@ -211,6 +224,43 @@ def upload_audio():
         logger.error(f"Unexpected error in /upload endpoint: {str(e)}", exc_info=True)
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
+
+@app.route('/clear_audio', methods=['POST'])
+def clear_audio():
+    """
+    Endpoint to receive an audio file from another microservice
+    and save it directly into the converted directory.
+    """
+    try:
+        if 'audio' not in request.files:
+            logger.error("No audio file sent in the /clear_audio request.")
+            return jsonify({"error": "No audio file sent"}), 400
+
+        audio_file = request.files['audio']
+        if not audio_file or audio_file.filename == '':
+            logger.error("Empty or nameless audio file in /clear_audio request.")
+            return jsonify({"error": "Empty audio file"}), 400
+
+        # Generate a unique filename for the saved audio
+        unique_filename = f"cleared_audio_{uuid.uuid4().hex}.wav" 
+        # Usar audio_processor.converted_folder
+        save_path = os.path.join(audio_processor.converted_folder, unique_filename)
+
+        audio_file.save(save_path)
+        logger.info(f"Audio received and saved to converted directory: {save_path}")
+
+        return jsonify({
+            "status": "success",
+            "message": "Audio successfully saved to converted directory",
+            "filename": unique_filename,
+            "path": f"{request.url_root.rstrip('/')}/processed/{unique_filename}" # Usa /processed para servir
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error in /clear_audio endpoint: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
 @app.route('/process/<session_id>', methods=['POST'])
 def process_audio(session_id):
     """
@@ -257,7 +307,7 @@ def process_audio(session_id):
 
         # Update MongoDB with the processed WAV path and status
         try:
-            # CORREÇÃO: Usar 'processed_wav_path' para consistência com o que é salvo no /upload
+            # Usar 'processed_wav_path' para consistência com o que é salvo no /upload
             final_audios_collection.update_one(
                 {"session_id": session_id, "user_id": user_id},
                 {"$set": {"processed_wav_path": result['output_path'], "status": "processed"}}
@@ -306,7 +356,7 @@ def get_audio(session_id):
             # return jsonify({'error': 'User not authenticated or invalid token'}), 401
 
         # Retrieve the processed_wav_path from MongoDB
-        # CORREÇÃO: Usar 'processed_wav_path' para buscar no MongoDB
+        # Usar 'processed_wav_path' para buscar no MongoDB
         audio_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id, "processed_wav_path": {"$ne": None}})
         if not audio_doc:
             logger.warning(f"Processed audio file not found in MongoDB for session {session_id} for user {user_id}.")
@@ -318,7 +368,7 @@ def get_audio(session_id):
         
         processed_file_path = audio_doc['processed_wav_path']
 
-        # CORREÇÃO: Verificar se o arquivo existe no diretório correto (temp_audio)
+        # Verificar se o arquivo existe no diretório correto (temp_audio)
         # O nome do arquivo no disco é 'converted_{session_id}.wav'
         expected_filename_on_disk = f'converted_{session_id}.wav'
         expected_full_path = os.path.join(audio_processor.converted_folder, expected_filename_on_disk)
@@ -349,7 +399,7 @@ def serve_processed_file(filename):
     Useful if the client already knows the final filename (e.g., converted_SESSIONID.wav).
     """
     try:
-        # CORREÇÃO: Usar audio_processor.converted_folder
+        # Usar audio_processor.converted_folder
         logger.info(f"Serving processed file: {filename} from directory {audio_processor.converted_folder}")
         return send_from_directory(audio_processor.converted_folder, filename)
     except Exception as e:
@@ -369,7 +419,7 @@ def list_audios():
             return jsonify({'error': 'User not authenticated or invalid token'}), 401
 
         # Find all processed audios for this user
-        # CORREÇÃO: Usar 'processed_wav_path' e considerar status de denoising
+        # Usar 'processed_wav_path' e considerar status de denoising
         user_audios = final_audios_collection.find(
             {"user_id": user_id, "processed_wav_path": {"$ne": None},
              "$or": [{"status": "processed"}, {"status": "sent_for_denoising"}]} # Listar se foi processado ou enviado para denoising
@@ -418,7 +468,7 @@ def delete_audio(session_id):
 
         # Get paths for both M4A (if it still exists) and WAV files
         saved_m4a_path = audio_doc.get("saved_m4a_path")
-        # CORREÇÃO: Usar 'processed_wav_path' para o caminho do WAV
+        # Usar 'processed_wav_path' para o caminho do WAV
         processed_wav_path = audio_doc.get("processed_wav_path")
 
         # Delete the M4A file from the filesystem if it exists
@@ -445,7 +495,7 @@ def delete_audio(session_id):
         final_audios_collection.delete_one({"session_id": session_id, "user_id": user_id})
         logger.info(f"Deleted audio metadata for session {session_id} from MongoDB.")
 
-        # Also clean up the upload directory if it still exists (should have been cleaned by process_session/cleanup)
+        # Also clean up the upload directory if it still exists (should have been cleaned by process_session)
         session_upload_dir = os.path.join(audio_processor.upload_folder, session_id)
         if os.path.exists(session_upload_dir):
             shutil.rmtree(session_upload_dir)
@@ -475,7 +525,7 @@ def clear_audio():
 
         # Generate a unique filename for the saved audio
         unique_filename = f"cleared_audio_{uuid.uuid4().hex}.wav" 
-        # CORREÇÃO: Usar audio_processor.converted_folder
+        # Usar audio_processor.converted_folder
         save_path = os.path.join(audio_processor.converted_folder, unique_filename)
 
         audio_file.save(save_path)
