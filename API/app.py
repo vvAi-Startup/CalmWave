@@ -225,43 +225,6 @@ def upload_audio():
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
-# Removida a definição duplicada da rota /clear_audio
-# @app.route('/clear_audio', methods=['POST'])
-# def clear_audio():
-#     """
-#     Endpoint to receive an audio file from another microservice
-#     and save it directly into the converted directory.
-#     """
-#     try:
-#         if 'audio' not in request.files:
-#             logger.error("No audio file sent in the /clear_audio request.")
-#             return jsonify({"error": "No audio file sent"}), 400
-
-#         audio_file = request.files['audio']
-#         if not audio_file or audio_file.filename == '':
-#             logger.error("Empty or nameless audio file in /clear_audio request.")
-#             return jsonify({"error": "Empty audio file"}), 400
-
-#         # Generate a unique filename for the saved audio
-#         unique_filename = f"cleared_audio_{uuid.uuid4().hex}.wav" 
-#         # Usar audio_processor.converted_folder
-#         save_path = os.path.join(audio_processor.converted_folder, unique_filename)
-
-#         audio_file.save(save_path)
-#         logger.info(f"Audio received and saved to converted directory: {save_path}")
-
-#         return jsonify({
-#             "status": "success",
-#             "message": "Audio successfully saved to converted directory",
-#             "filename": unique_filename,
-#             "path": f"{request.url_root.rstrip('/')}/processed/{unique_filename}" # Usa /processed para servir
-#         }), 200
-
-#     except Exception as e:
-#         logger.error(f"Error in /clear_audio endpoint: {str(e)}", exc_info=True)
-#         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
-
-
 @app.route('/process/<session_id>', methods=['POST'])
 def process_audio(session_id):
     """
