@@ -14,26 +14,26 @@ class AudioProcessor:
 
     Atributos:
         upload_folder (str): Diretório para uploads temporários do áudio final M4A.
-        processed_folder (str): Diretório para arquivos processados (WAV).
+        converted_folder (str): Diretório para arquivos processados (WAV).
         session_data (Dict): Dados das sessões ativas (armazena apenas o caminho do áudio final M4A).
     """
 
-    def __init__(self, upload_folder: str = 'uploads', processed_folder: str = 'processed'):
+    def __init__(self, upload_folder: str = 'uploads', converted_folder: str = 'temp_audio'):
         """
         Inicializa o processador de áudio.
 
         Args:
             upload_folder: Diretório para uploads temporários do M4A final.
-            processed_folder: Diretório para arquivos WAV processados.
+            converted_folder: Diretório para arquivos WAV processados.
         """
         self.upload_folder = upload_folder
-        self.processed_folder = processed_folder
+        self.converted_folder = converted_folder
         self.session_data = {}
 
         # Criar diretórios se não existirem
         os.makedirs(upload_folder, exist_ok=True)
-        os.makedirs(processed_folder, exist_ok=True)
-        logger.info(f"Diretórios de áudio inicializados: uploads='{upload_folder}', processed='{processed_folder}'")
+        os.makedirs(converted_folder, exist_ok=True)
+        logger.info(f"Diretórios de áudio inicializados: uploads='{upload_folder}', converted='{converted_folder}'")
 
     def save_final_audio(self, audio_data: bytes, session_id: str, filename: str = 'final_audio.m4a') -> str:
         """
@@ -131,10 +131,10 @@ class AudioProcessor:
                 }
 
             # Converter o arquivo M4A final para WAV
-            final_wav_output_path = os.path.join(self.processed_folder, f'final_processed_{session_id}.wav')
+            final_wav_output_path = os.path.join(self.converted_folder, f'converted_{session_id}.wav')
             self.convert_m4a_to_wav(final_m4a_path, final_wav_output_path)
 
-            self.session_data[session_id]['status'] = 'processed'
+            self.session_data[session_id]['status'] = 'converted'
             self.session_data[session_id]['output_path'] = final_wav_output_path
 
             logger.info(f"Sessão {session_id} processada com sucesso. WAV em: {final_wav_output_path}")
@@ -198,7 +198,7 @@ class AudioProcessor:
                 shutil.rmtree(session_upload_dir)
                 logger.info(f"Diretório de upload da sessão {session_id} removido (inclui M4A final).")
 
-            # O arquivo WAV final (final_processed_{session_id}.wav) permanece na pasta 'processed'.
+            # O arquivo WAV final (converted_{session_id}.wav) permanece na pasta 'converted'.
 
             # Remover dados da sessão da memória
             if session_id in self.session_data:

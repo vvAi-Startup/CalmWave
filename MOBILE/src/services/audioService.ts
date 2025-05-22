@@ -1,3 +1,4 @@
+// src/services/audioService.ts
 import { API_BASE_URL, API_ENDPOINTS, API_TIMEOUT } from '../config/api';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,10 +22,10 @@ export type AudioListItem = {
   created_at: number; // Timestamp de criação
 };
 
-export const audioService = {
+export const audioService = { // Garante que audioService é exportado corretamente
   /**
-   * Faz o upload do arquivo de áudio final para o servidor.
-   * Assume que este é sempre o arquivo de áudio completo.
+   * Faz o upload do arquivo de áudio final (M4A) para o servidor.
+   * A API agora processa (converte para WAV e envia para denoising) automaticamente após o upload.
    * @param audioUri URI local do arquivo de áudio final.
    * @param sessionId ID da sessão à qual o áudio pertence.
    * @returns Resposta da API.
@@ -44,12 +45,13 @@ export const audioService = {
         name: `final_audio.m4a`, // A fixed name for the final audio file
       } as any);
       formData.append('session_id', sessionId || '');
-      // chunk_number and is_final are still sent as the backend expects them,
-      // but their values are fixed as we're sending the full audio.
-      formData.append('chunk_number', '0'); 
-      formData.append('is_final', 'true'); 
+      // chunk_number e is_final são enviados conforme o backend espera,
+      // mas seus valores são fixos, pois estamos enviando o áudio completo.
+      formData.append('chunk_number', '0');
+      formData.append('is_final', 'true');
 
       const url = `${API_BASE_URL}${API_ENDPOINTS.UPLOAD_AUDIO}`;
+      console.log('URL de Upload:', url); // Log para depuração
       const headers = await getAuthHeaders();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
@@ -60,7 +62,7 @@ export const audioService = {
           body: formData,
           headers: {
             ...headers,
-            "content-type": "multipart/form-data", // Important for FormData
+            "content-type": "multipart/form-data", // Importante para FormData
           },
           signal: controller.signal,
         });
@@ -86,39 +88,58 @@ export const audioService = {
   },
 
   /**
-   * Solicita ao servidor para processar o áudio de uma sessão.
-   * @param sessionId ID da sessão a ser processada.
-   * @returns Resposta da API.
+   * Baixa o arquivo de áudio WAV processado do backend.
+   * @param sessionId O ID da sessão do áudio a ser baixado.
+   * @returns O URI local do arquivo WAV baixado.
    */
-  async processAudio(sessionId: string): Promise<any> {
+  async downloadAudio(sessionId: string): Promise<string> {
     try {
-      const url = `${API_BASE_URL}/process/${sessionId}`;
-      const headers = await getAuthHeaders();
+      const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+      if (!token) throw new Error('Token de autenticação não encontrado.');
+
+      // O endpoint para baixar o WAV processado é /audio/{sessionId}
+      const downloadUrl = `${API_BASE_URL}${API_ENDPOINTS.GET_AUDIO}/${sessionId}`;
+      const localUri = `${FileSystem.documentDirectory}audios/downloaded_processed_${sessionId}.wav`;
+
+      console.log(`Tentando baixar de: ${downloadUrl} para ${localUri}`);
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
       try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          signal: controller.signal,
+        const { uri, status } = await FileSystem.downloadAsync(downloadUrl, localUri, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          // FileSystem.downloadAsync não suporta AbortController diretamente via 'signal'
+          // A lógica de timeout é tratada manualmente com setTimeout e clearTimeout
         });
 
         clearTimeout(timeoutId);
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Erro ao processar o áudio: ${response.status} - ${errorText}`);
+
+        if (status !== 200) {
+          let errorBody = 'Unknown error';
+          try {
+            // Tenta ler o corpo da resposta como texto para obter detalhes do erro
+            const responseText = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+            errorBody = responseText;
+          } catch (readError) {
+            console.warn('Não foi possível ler o corpo da resposta de erro:', readError);
+          }
+          console.error('Download falhou com status:', status, 'Resposta de erro:', errorBody);
+          throw new Error(`Falha ao baixar áudio processado: Servidor respondeu com status ${status}. ${errorBody}`);
         }
 
-        return await response.json();
+        console.log('Áudio processado baixado para:', uri);
+        return uri;
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          throw new Error('Timeout ao processar o áudio');
+          throw new Error('Timeout ao baixar o áudio');
         }
         throw error;
       }
     } catch (error) {
-      console.error('Erro no processamento:', error);
+      console.error('Erro no download:', error);
       throw error;
     }
   },
@@ -130,7 +151,7 @@ export const audioService = {
   async testConnection(): Promise<boolean> {
     try {
       console.log('=== TESTANDO CONEXÃO COM A API ===');
-      const url = `${API_BASE_URL}/health`;
+      const url = `${API_BASE_URL}${API_ENDPOINTS.HEALTH_CHECK}`;
       const headers = await getAuthHeaders();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
@@ -167,7 +188,7 @@ export const audioService = {
    */
   async listAudios(): Promise<AudioListItem[]> {
     try {
-      const url = `${API_BASE_URL}/audios/list`;
+      const url = `${API_BASE_URL}${API_ENDPOINTS.LIST_AUDIOS}`;
       const headers = await getAuthHeaders();
       const response = await fetch(url, { method: 'GET', headers });
 
@@ -190,7 +211,7 @@ export const audioService = {
    */
   async deleteAudio(sessionId: string): Promise<any> {
     try {
-      const url = `${API_BASE_URL}/audio/${sessionId}`; // O endpoint DELETE usa o mesmo caminho do GET
+      const url = `${API_BASE_URL}${API_ENDPOINTS.DELETE_AUDIO}/${sessionId}`; // O endpoint DELETE usa o mesmo caminho do GET
       const headers = await getAuthHeaders();
       const response = await fetch(url, { method: 'DELETE', headers });
 
