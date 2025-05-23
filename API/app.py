@@ -146,24 +146,32 @@ def upload_audio():
         processed_wav_path = processing_result['output_path']
         logger.info(f"Audio converted to WAV for session {session_id} at: {processed_wav_path}")
 
+        # --- NOVA VERIFICAÇÃO: Tamanho do arquivo WAV ---
+        if not os.path.exists(processed_wav_path) or os.path.getsize(processed_wav_path) == 0:
+            logger.error(f"Processed WAV file is missing or empty: {processed_wav_path}. Cannot send for denoising.")
+            return jsonify({"error": "Processed audio file is missing or empty. Denoising aborted."}), 500
+        # --- FIM DA NOVA VERIFICAÇÃO ---
+
         # Send the processed WAV audio to the external microservice
         denoise_service_url = "http://10.67.57.148:8000/audio/denoise" 
         try:
-            # Dados adicionais a serem enviados junto com o arquivo
-            additional_data = {
-                'session_id': session_id,
-                'user_id': user_id, # user_id obtido (do formulário, token ou padrão)
-                'file_name': os.path.basename(processed_wav_path) # Nome do arquivo WAV
-            }
+            # Open the WAV file to send it as a file object
+            # This is generally more memory-efficient for larger files
+            with open(processed_wav_path, 'rb') as audio_file_handle:
+                files_to_send = {
+                    'audio': (os.path.basename(processed_wav_path), audio_file_handle, 'audio/wav'),
+                    'session_id': (None, session_id), 
+                    'user_id': (None, user_id),       
+                    'filename': (None, os.path.basename(processed_wav_path)), 
+                    'intensity': (None, str(1.0)) # Convertido para string para Form field no FastAPI
+                }
 
-            with open(processed_wav_path, 'rb') as f:
                 denoise_response = requests.post(
                     denoise_service_url, 
-                    files={'audio': (os.path.basename(processed_wav_path), f.read(), 'audio/wav')},
-                    data=additional_data, # Envia os dados adicionais
-                    timeout=60 # Adicione um timeout para a requisição
+                    files=files_to_send, # Todos os campos agora são enviados via 'files'
+                    timeout=60 
                 )
-            denoise_response.raise_for_status() # Levanta um erro para códigos de status HTTP 4xx/5xx
+            denoise_response.raise_for_status() 
             logger.info(f"Audio sent to denoise service successfully. Response: {denoise_response.json()}")
             denoise_status = "sent_for_denoising"
             denoise_message = denoise_response.json().get('message', 'Audio sent to denoise service.')
@@ -171,8 +179,6 @@ def upload_audio():
             logger.error(f"Error sending audio to denoise service: {req_err}", exc_info=True)
             denoise_status = "denoise_send_failed"
             denoise_message = f"Failed to send audio for denoising: {req_err}"
-            # Decide if you want to return an error to the client here or continue
-            # For now, we'll log and continue, but the MongoDB status will reflect failure.
         except Exception as e:
             logger.error(f"Unexpected error during denoise service call: {e}", exc_info=True)
             denoise_status = "denoise_send_failed"
@@ -183,19 +189,17 @@ def upload_audio():
             final_audios_collection.insert_one({
                 "session_id": session_id,
                 "user_id": user_id,
-                "filename": filename, # This will be 'final_audio.m4a'
+                "filename": filename, 
                 "content_type": content_type,
-                "saved_m4a_path": saved_m4a_path, # Path to the M4A file
-                "processed_wav_path": processed_wav_path, # Path to the WAV file
-                "status": denoise_status, # Status reflecting the denoise sending attempt
+                "saved_m4a_path": saved_m4a_path, 
+                "processed_wav_path": processed_wav_path, 
+                "status": denoise_status, 
                 "denoise_message": denoise_message,
                 "created_at": time.time()
             })
             logger.info(f"Final audio info for session {session_id} saved to MongoDB with denoise status.")
         except Exception as mongo_err:
             logger.error(f"Error saving final audio info to MongoDB: {str(mongo_err)}", exc_info=True)
-            # Do not return 500 error to the client if file upload/processing was successful but MongoDB failed.
-            # Just log the error.
 
         # Clean up session resources (removes M4A, keeps WAV for potential serving by this app)
         try:
@@ -203,8 +207,6 @@ def upload_audio():
             logger.info(f"Session {session_id} resources cleaned up after sending to denoise service.")
         except Exception as cleanup_err:
             logger.error(f"Error cleaning up session resources {session_id}: {str(cleanup_err)}", exc_info=True)
-            # Cleanup failed, but processing and sending were successful, so we don't return 500 error to the client.
-            # Just log the issue.
 
         # Remove session from the list of active sessions (in memory)
         if session_id in active_sessions:
@@ -223,7 +225,7 @@ def upload_audio():
     except Exception as e:
         logger.error(f"Unexpected error in /upload endpoint: {str(e)}", exc_info=True)
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
-
+    
 
 @app.route('/process/<session_id>', methods=['POST'])
 def process_audio(session_id):
@@ -379,7 +381,7 @@ def list_audios():
     try:
         user_id = get_user_id_from_request()
         if not user_id:
-            logger.warning("Attempted to list audios without authentication or invalid token.")
+            logger.warning(f"Attempted to list audios without authentication or invalid token.")
             return jsonify({'error': 'User not authenticated or invalid token'}), 401
 
         # Find all processed audios for this user
@@ -484,7 +486,7 @@ def clear_audio():
 
         audio_file = request.files['audio']
         if not audio_file or audio_file.filename == '':
-            logger.error("Empty or nameless audio file in /clear_audio request.")
+            logger.error("Empty or nameless audio file.")
             return jsonify({"error": "Empty audio file"}), 400
 
         # Generate a unique filename for the saved audio
