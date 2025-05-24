@@ -223,22 +223,27 @@ def upload_audio():
             # Tenta encontrar o documento existente para atualizar
             existing_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id})
             
-            update_fields = {
+            # Campos base que sempre devem existir
+            base_fields = {
                 "user_id": user_id,
+                "session_id": session_id,
                 "filename": filename, 
                 "content_type": content_type,
                 "saved_m4a_path": saved_m4a_path, 
-                "processed_wav_path": processed_wav_path_temp, # Caminho para o WAV temporário
-                "status": denoise_status, # Status da tentativa de denoising
+                "processed_wav_path": processed_wav_path_temp,
+                "status": denoise_status,
                 "denoise_message": denoise_message,
-                "created_at": existing_doc.get("created_at", time.time()), # Mantém o timestamp original se existir
-                "last_updated_at": time.time(), # Novo timestamp de atualização
-                "final_denoised_path": processed_audio_path_for_client # Se o denoising foi síncrono e retornou o path
+                "created_at": existing_doc.get("created_at", time.time()) if existing_doc else time.time(),
+                "last_updated_at": time.time()
             }
+
+            # Adiciona o caminho final se disponível
+            if processed_audio_path_for_client:
+                base_fields["final_denoised_path"] = processed_audio_path_for_client
 
             result_mongo_upload = final_audios_collection.update_one(
                 {"session_id": session_id, "user_id": user_id},
-                {"$set": update_fields},
+                {"$set": base_fields},
                 upsert=True
             )
             if result_mongo_upload.upserted_id:
@@ -334,45 +339,64 @@ def get_audio(session_id):
 @app.route('/audios/list', methods=['GET'])
 def list_audios():
     """
-    Endpoint para listar todos os arquivos de áudio para o usuário logado (ou anônimo).
-    Retorna APENAS os áudios que foram marcados com o status "denoised_completed" e têm um 'final_denoised_path'.
+    Endpoint para listar todos os arquivos de áudio, incluindo áudios anônimos.
+    Retorna áudios em diferentes estados de processamento.
     """
-    user_id = "anonymous_user"
     try:
-        user_id = get_user_id_from_token() or "anonymous_user"
-        logger.info(f"User {user_id}: Requisição /audios/list recebida.")
+        logger.info("Requisição /audios/list recebida.")
 
-        # Busca APENAS os áudios para este user_id que foram FINALIZADOS e têm o caminho denoised
-        user_audios = final_audios_collection.find(
-            {
-                "user_id": user_id,
-                "final_denoised_path": {"$ne": None}, # Garante que o caminho final existe
-                "status": "denoised_completed"        # Garante que o status é de completo
-            }
-        ).sort("created_at", -1) # Ordena por tempo de criação, mais novo primeiro
+        # Busca todos os áudios, ordenados por data de criação
+        all_audios = final_audios_collection.find().sort("created_at", -1) # Ordena por tempo de criação, mais novo primeiro
 
         audio_list = []
-        for audio_doc in user_audios:
+        for audio_doc in all_audios:
             session_id = audio_doc.get("session_id")
+            user_id = audio_doc.get("user_id", "anonymous_user")
             base_api_url = request.url_root.rstrip('/')
             
-            # A URL do áudio sempre aponta para o endpoint /audio/<session_id>
-            audio_url = f"{base_api_url}/audio/{session_id}"
+            # Determina a URL do áudio baseado no status
+            audio_url = None
+            if audio_doc.get("status") == "denoised_completed" and audio_doc.get("final_denoised_path"):
+                # Se o áudio está processado, usa o endpoint /audio/<session_id>
+                audio_url = f"{base_api_url}/audio/{session_id}"
+            elif audio_doc.get("processed_wav_path"):
+                # Se tem WAV temporário, usa o endpoint /audio/<session_id>
+                audio_url = f"{base_api_url}/audio/{session_id}"
+
+            # Determina o título baseado no status e user_id
+            status = audio_doc.get("status", "unknown")
+            title = f"Gravação {time.strftime('%d/%m/%Y %H:%M', time.localtime(audio_doc['created_at']))}"
+            
+            # Adiciona informações de status ao título
+            if status == "denoised_completed":
+                title += " (Processado)"
+            elif status == "processing":
+                title += " (Processando...)"
+            elif status == "error":
+                title += " (Erro no processamento)"
+            elif status == "uploaded":
+                title += " (Aguardando processamento)"
+
+            # Adiciona informação do usuário ao título
+            if user_id != "anonymous_user":
+                title += f" - Usuário: {user_id}"
 
             audio_list.append({
                 "id": str(audio_doc["_id"]),
                 "session_id": session_id,
-                "title": f"Gravação Processada ({time.strftime('%d/%m/%Y %H:%M', time.localtime(audio_doc['created_at']))})",
+                "user_id": user_id,
+                "title": title,
                 "path": audio_url,
                 "created_at": audio_doc["created_at"],
-                "status": audio_doc.get("status", "unknown") # Inclui o status para que o frontend possa exibir
+                "status": status,
+                "status_message": audio_doc.get("denoise_message", "")
             })
         
-        logger.info(f"User {user_id}: Retornando {len(audio_list)} áudios *processados* para o usuário.")
+        logger.info(f"Retornando {len(audio_list)} áudios.")
         return jsonify(audio_list), 200
 
     except Exception as e:
-        logger.error(f"User {user_id}: Erro ao listar áudios: {str(e)}", exc_info=True)
+        logger.error(f"Erro ao listar áudios: {str(e)}", exc_info=True)
         return jsonify({'error': f"Erro interno do servidor: {str(e)}"}), 500
     
 @app.route('/audio/<session_id>', methods=['DELETE'])
@@ -487,22 +511,44 @@ def clear_audio():
         logger.info(f"User {user_id}, Session {session_id}: Áudio recebido e salvo com sucesso em processed_output_folder: {saved_processed_path} (Tamanho: {os.path.getsize(saved_processed_path)} bytes)")
 
         # Atualiza o registro do MongoDB para esta sessão
-        result_mongo_clear = final_audios_collection.update_one(
-            {"session_id": session_id, "user_id": user_id},
-            {"$set": {
+        try:
+            # Tenta encontrar o documento existente
+            existing_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id})
+            
+            # Campos base que sempre devem existir
+            base_fields = {
+                "user_id": user_id,
+                "session_id": session_id,
                 "final_denoised_path": saved_processed_path,
-                "status": "denoised_completed", # Status final de sucesso!
+                "status": "denoised_completed",
                 "denoise_message": "Áudio denoised e salvo com sucesso.",
                 "last_updated_at": time.time()
-            }},
-            upsert=True # Se o documento não existir (o que pode acontecer se o upload original falhou antes de salvar no mongo)
-        )
-        if result_mongo_clear.upserted_id:
-            logger.info(f"User {user_id}, Session {session_id}: Novo documento MongoDB INSERIDO (áudio denoised). ID: {result_mongo_clear.upserted_id}")
-        elif result_mongo_clear.modified_count > 0:
-            logger.info(f"User {user_id}, Session {session_id}: Documento MongoDB ATUALIZADO (áudio denoised).")
-        else:
-            logger.warning(f"User {user_id}, Session {session_id}: Documento MongoDB NÃO FOI INSERIDO/ATUALIZADO por /clear_audio. Isso pode indicar um session_id incorreto ou um documento já finalizado/excluído.")
+            }
+
+            # Se o documento existir, mantém os campos originais
+            if existing_doc:
+                base_fields.update({
+                    "filename": existing_doc.get("filename", original_filename),
+                    "content_type": existing_doc.get("content_type", "audio/wav"),
+                    "saved_m4a_path": existing_doc.get("saved_m4a_path"),
+                    "processed_wav_path": existing_doc.get("processed_wav_path"),
+                    "created_at": existing_doc.get("created_at", time.time())
+                })
+
+            result_mongo_clear = final_audios_collection.update_one(
+                {"session_id": session_id, "user_id": user_id},
+                {"$set": base_fields},
+                upsert=True
+            )
+            if result_mongo_clear.upserted_id:
+                logger.info(f"User {user_id}, Session {session_id}: Novo documento MongoDB INSERIDO (áudio denoised). ID: {result_mongo_clear.upserted_id}")
+            elif result_mongo_clear.modified_count > 0:
+                logger.info(f"User {user_id}, Session {session_id}: Documento MongoDB ATUALIZADO (áudio denoised).")
+            else:
+                logger.warning(f"User {user_id}, Session {session_id}: Documento MongoDB NÃO FOI INSERIDO/ATUALIZADO por /clear_audio.")
+
+        except Exception as e:
+            logger.error(f"User {user_id}, Session {session_id}: Erro ao atualizar MongoDB (rota /clear_audio): {str(e)}", exc_info=True)
 
         # Limpa o arquivo WAV temporário agora que o áudio denoised final foi salvo
         try:

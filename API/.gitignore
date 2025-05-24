@@ -1,9 +1,6 @@
 @ -1,40 +0,0 @@
 # Ignore a virtual environment (pasta padrão)
 venv/
-.env/
-ENV/
-env/
 
 # Bytecode compilado do Python
 __pycache__/
