@@ -12,501 +12,627 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId # Import ObjectId for MongoDB queries
 import requests # Importar a biblioteca requests
 
-# Load environment variables from .env file
+# Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
 
-# Configure logging
+# Configuração de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Configure CORS to accept requests from any origin
+# Configura CORS para aceitar requisições de qualquer origem
 CORS(app, resources={
     r"/*": {
         "origins": "*",
-        "methods": ["GET", "POST", "DELETE", "OPTIONS"], # Added DELETE method
+        "methods": ["GET", "POST", "DELETE", "OPTIONS", "PUT"], # Adicionado método PUT para mais flexibilidade
         "allow_headers": ["Content-Type", "Authorization"]
     }
 })
 
 app.register_blueprint(auth_bp, url_prefix='/auth')
 
-# Initialize audio processor
+# Inicializa o processador de áudio
 audio_processor = AudioProcessor()
 
-# Store active sessions (in memory, for basic control)
-# Now tracks if a session has a final audio uploaded
-active_sessions = {}
-
-# Connect to MongoDB
+# Conecta ao MongoDB
 try:
     mongo_uri = os.getenv('MONGO_URI')
     if not mongo_uri:
-        raise ValueError("Environment variable 'MONGO_URI' is not defined.")
+        raise ValueError("Variável de ambiente 'MONGO_URI' não está definida.")
     mongo = MongoClient(mongo_uri)
     db = mongo['calmwave']
-    final_audios_collection = db['final_audios'] # Renamed collection for clarity
-    logger.info("Connected to MongoDB successfully.")
+    final_audios_collection = db['final_audios'] # Coleção para armazenar metadados dos áudios
+    logger.info("Conectado ao MongoDB com sucesso.")
 except Exception as e:
-    logger.error(f"Error connecting to MongoDB: {str(e)}", exc_info=True)
-    # In a production environment, you might want to exit or have a fallback
-    # For development, we'll just log the error.
+    logger.error(f"Erro ao conectar ao MongoDB: {str(e)}", exc_info=True)
+    # Em um ambiente de produção, você pode querer sair ou ter um fallback.
+    # Para desenvolvimento, apenas registraremos o erro.
 
-def get_user_id_from_request():
+def get_user_id_from_token():
     """
-    Extracts the user_id from the JWT token in the request.
+    Extrai o user_id do token JWT na requisição.
+    Retorna None se o token for inválido ou não estiver presente.
     """
     token = request.headers.get('Authorization')
     if not token:
-        logger.debug("No authorization token found.")
+        logger.debug("Nenhum token de autorização encontrado.")
         return None
     if token.startswith('Bearer '):
         token = token[7:]
     payload = verify_token(token)
     if not payload:
-        logger.warning("Invalid or expired JWT token.")
-        return None
+        logger.warning("Token JWT inválido ou expirado.")
     return payload.get('user_id')
 
 @app.route('/health')
 def health_check():
     """
-    Endpoint to check if the API is online.
+    Endpoint para verificar se a API está online.
     """
     return jsonify({'status': 'ok', 'message': 'API is running!'}), 200
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():
     """
-    Endpoint for uploading the final audio file.
-    Receives the complete audio file, saves it, converts it to WAV,
-    and then sends the WAV to an external denoising microservice.
+    Endpoint para upload do arquivo de áudio final.
+    Recebe o arquivo de áudio completo, salva-o, converte para WAV,
+    e então envia o WAV para um microsserviço de denoising externo.
+    Não requer autenticação JWT, usa "anonymous_user" se não logado.
     """
+    user_id = "anonymous_user" # Default
     try:
-        # Tenta obter user_id do formulário primeiro
-        user_id = request.form.get('user_id')
-        
-        # Se não estiver no formulário, tenta do token JWT (se presente)
-        if not user_id:
-            user_id = get_user_id_from_request()
-        
-        # Se user_id ainda for None, atribui um valor padrão
-        if not user_id:
-            user_id = "anonymous_user" # Ou str(uuid.uuid4()) para um ID único a cada vez
-            logger.info(f"No user_id provided or authenticated. Assigning default: {user_id}")
+        # Tenta obter user_id do token JWT. Se não, usa "anonymous_user".
+        user_id = get_user_id_from_token() or "anonymous_user"
+        logger.info(f"Requisição /upload recebida. User_id determinado: {user_id}")
 
         if 'audio' not in request.files:
-            logger.error("No audio file sent in the request.")
-            return jsonify({"error": "No audio file sent"}), 400
+            logger.error(f"User {user_id}: Nenhum arquivo de áudio enviado na requisição /upload.")
+            return jsonify({"error": "Nenhum arquivo de áudio enviado"}), 400
 
         audio_file = request.files['audio']
         if not audio_file or audio_file.filename == '':
-            logger.error("Empty or nameless audio file.")
-            return jsonify({"error": "Empty audio file"}), 400
+            logger.error(f"User {user_id}: Arquivo de áudio vazio ou sem nome em /upload.")
+            return jsonify({"error": "Arquivo de áudio vazio"}), 400
 
-        # Get session_id from the form
-        session_id = request.form.get('session_id')
-        logger.info(f"Upload received for session_id: {session_id}")
+        session_id = request.form.get('session_id') or str(uuid.uuid4())
+        logger.info(f"User {user_id}: Upload recebido para session_id: {session_id}")
         
-        # If no session_id, create a new session
-        if not session_id:
-            session_id = str(uuid.uuid4())
-            logger.info(f"New session created: {session_id}")
-        
-        # Mark session as active and having an uploaded file
-        active_sessions[session_id] = {"uploaded_final_audio": True}
-        logger.info(f"Session {session_id} marked as active with final audio uploaded.")
-
-        # Read audio data
         audio_data = audio_file.read()
         if not audio_data:
-            logger.error("Empty audio data after reading the file.")
-            return jsonify({"error": "Empty audio data"}), 400
+            logger.error(f"User {user_id}, Session {session_id}: Dados de áudio vazios após a leitura do arquivo.")
+            return jsonify({"error": "Dados de áudio vazios"}), 400
 
-        # Get file information
         content_type = audio_file.content_type
         filename = audio_file.filename 
-        logger.info(f"Upload received - Session: {session_id}, Content-Type: {content_type}, Filename: {filename}")
+        logger.info(f"User {user_id}, Session {session_id}: Upload recebido - Content-Type: {content_type}, Nome do Arquivo: {filename}")
 
-        # Save the final audio file (M4A) using the AudioProcessor method
+        # Salva o arquivo de áudio final (M4A) usando o método do AudioProcessor
         saved_m4a_path = audio_processor.save_final_audio(
             audio_data, 
             session_id, 
             filename=filename
         )
-        logger.info(f"Final M4A audio saved successfully for session {session_id} at: {saved_m4a_path}")
+        logger.info(f"User {user_id}, Session {session_id}: Áudio M4A final salvo com sucesso em: {saved_m4a_path}")
 
-        # Process the audio (convert M4A to WAV)
+        # Processa o áudio (converte M4A para WAV)
         processing_result = audio_processor.process_session(session_id)
         if processing_result["status"] == "error":
-            logger.error(f"Error processing audio for session {session_id}: {processing_result['message']}")
-            return jsonify({"error": f"Failed to process audio: {processing_result['message']}"}), 500
+            logger.error(f"User {user_id}, Session {session_id}: Erro ao converter M4A para WAV: {processing_result['message']}")
+            # Update MongoDB status to reflect conversion failure
+            final_audios_collection.update_one(
+                {"session_id": session_id, "user_id": user_id},
+                {"$set": {"status": "conversion_failed", "denoise_message": f"Falha na conversão para WAV: {processing_result['message']}", "created_at": time.time()}},
+                upsert=True
+            )
+            return jsonify({
+                "session_id": session_id,
+                "message": f"Falha ao processar áudio: {processing_result['message']}",
+                "denoise_service_status": "conversion_failed",
+                "denoise_service_message": f"Falha na conversão de M4A para WAV."
+            }), 500
         
-        processed_wav_path = processing_result['output_path']
-        logger.info(f"Audio converted to WAV for session {session_id} at: {processed_wav_path}")
+        processed_wav_path_temp = processing_result['output_path'] 
+        logger.info(f"User {user_id}, Session {session_id}: Áudio convertido para WAV em: {processed_wav_path_temp}")
 
-        # --- NOVA VERIFICAÇÃO: Tamanho do arquivo WAV ---
-        if not os.path.exists(processed_wav_path) or os.path.getsize(processed_wav_path) == 0:
-            logger.error(f"Processed WAV file is missing or empty: {processed_wav_path}. Cannot send for denoising.")
-            return jsonify({"error": "Processed audio file is missing or empty. Denoising aborted."}), 500
-        # --- FIM DA NOVA VERIFICAÇÃO ---
+        if not os.path.exists(processed_wav_path_temp) or os.path.getsize(processed_wav_path_temp) == 0:
+            logger.error(f"User {user_id}, Session {session_id}: Arquivo WAV processado está faltando ou vazio: {processed_wav_path_temp}. Não é possível enviar para denoising.")
+            # Update MongoDB status to reflect missing WAV
+            final_audios_collection.update_one(
+                {"session_id": session_id, "user_id": user_id},
+                {"$set": {"status": "wav_missing", "denoise_message": "Arquivo WAV temporário está faltando ou vazio.", "created_at": time.time()}},
+                upsert=True
+            )
+            return jsonify({
+                "session_id": session_id,
+                "message": "Arquivo de áudio processado está faltando ou vazio. Denoising abortado.",
+                "denoise_service_status": "wav_missing",
+                "denoise_service_message": "Arquivo WAV temporário não encontrado para denoising."
+            }), 500
 
-        # Send the processed WAV audio to the external microservice
-        denoise_service_url = "http://10.67.57.148:8000/audio/denoise" 
+        # --- Envio para o microsserviço de denoising ---
+        denoise_service_url = os.getenv("DENOISE_SERVER", "http://10.67.57.148:8000/audio/denoise") # Usar variável de ambiente
+        denoise_status = "unknown"
+        denoise_message = "Mensagem de denoising inicial."
+        processed_audio_path_for_client = None # Path a ser retornado ao cliente, apenas se denoising for síncrono e bem-sucedido
+
         try:
-            # Open the WAV file to send it as a file object
-            # This is generally more memory-efficient for larger files
-            with open(processed_wav_path, 'rb') as audio_file_handle:
+            with open(processed_wav_path_temp, 'rb') as audio_file_handle:
                 files_to_send = {
-                    'audio': (os.path.basename(processed_wav_path), audio_file_handle, 'audio/wav'),
-                    'session_id': (None, session_id), 
-                    'user_id': (None, user_id),       
-                    'filename': (None, os.path.basename(processed_wav_path)), 
-                    'intensity': (None, str(1.0)) # Convertido para string para Form field no FastAPI
+                    'audio_file': (os.path.basename(processed_wav_path_temp), audio_file_handle, 'audio/wav'),
                 }
+                params_to_send = {
+                    'intensity': 1.0, 
+                    'session_id': session_id,
+                    'user_id': user_id, # Envia o user_id (anonymous_user ou real) para o microsserviço
+                    'filename': filename
+                }
+
+                logger.debug(f"User {user_id}, Session {session_id}: Enviando para o serviço de denoising - URL: {denoise_service_url}, Parâmetros: {params_to_send}")
 
                 denoise_response = requests.post(
                     denoise_service_url, 
-                    files=files_to_send, # Todos os campos agora são enviados via 'files'
-                    timeout=60 
+                    params=params_to_send, 
+                    files=files_to_send, 
+                    timeout=300 # Aumentei o timeout para 5 minutos
                 )
-            denoise_response.raise_for_status() 
-            logger.info(f"Audio sent to denoise service successfully. Response: {denoise_response.json()}")
-            denoise_status = "sent_for_denoising"
-            denoise_message = denoise_response.json().get('message', 'Audio sent to denoise service.')
-        except requests.exceptions.RequestException as req_err:
-            logger.error(f"Error sending audio to denoise service: {req_err}", exc_info=True)
-            denoise_status = "denoise_send_failed"
-            denoise_message = f"Failed to send audio for denoising: {req_err}"
-        except Exception as e:
-            logger.error(f"Unexpected error during denoise service call: {e}", exc_info=True)
-            denoise_status = "denoise_send_failed"
-            denoise_message = f"Unexpected error during denoise service call: {e}"
+            denoise_response.raise_for_status() # Lança HTTPError para status de erro (4xx ou 5xx)
+            
+            denoise_response_json = denoise_response.json()
+            logger.info(f"User {user_id}, Session {session_id}: Resposta do serviço de denoising: {denoise_response_json}")
+            
+            # Assuming the denoising service returns a 'status' field
+            denoise_service_internal_status = denoise_response_json.get('status', 'unknown')
+            denoise_service_internal_message = denoise_response_json.get('message', 'Nenhuma mensagem específica do serviço de denoising.')
 
-        # Save information to MongoDB
+            if denoise_service_internal_status == 'success':
+                denoise_status = "denoised_completed"
+                denoise_message = "Áudio denoised e salvo com sucesso pelo microsserviço."
+                # O microsserviço *deve* retornar o path final se for síncrono
+                processed_audio_path_for_client = denoise_response_json.get('path') 
+                if processed_audio_path_for_client:
+                    # Se o microsserviço retorna o caminho completo, use-o.
+                    # Se retornar apenas o nome do arquivo, construa a URL aqui.
+                    # Ex: f"{request.url_root.rstrip('/')}/processed/{os.path.basename(processed_audio_path_for_client)}"
+                    pass # O path já está pronto para ser enviado de volta
+                else:
+                    logger.warning(f"User {user_id}, Session {session_id}: Serviço de denoising retornou sucesso, mas sem 'path' para o áudio processado.")
+                    denoise_status = "denoised_completed_no_path"
+                    denoise_message = "Denoising completo, mas o caminho do áudio processado não foi retornado."
+
+            else:
+                denoise_status = "denoise_processing_failed"
+                denoise_message = f"Denoising falhou no serviço: {denoise_service_internal_message}"
+
+        except requests.exceptions.Timeout:
+            logger.error(f"User {user_id}, Session {session_id}: Requisição do serviço de denoising excedeu o tempo limite (300s).")
+            denoise_status = "denoise_timeout"
+            denoise_message = "Requisição do serviço de denoising excedeu o tempo limite."
+        except requests.exceptions.RequestException as req_err:
+            error_response_text = req_err.response.text if req_err.response is not None else "No response body."
+            logger.error(f"User {user_id}, Session {session_id}: Erro de requisição ao enviar áudio para o serviço de denoising: {req_err} - Resposta: {error_response_text}", exc_info=True)
+            denoise_status = "denoise_send_failed"
+            denoise_message = f"Falha ao enviar áudio para denoising: {req_err} - Resposta: {error_response_text}"
+        except Exception as e: # Captura JSONDecodeError e outros erros
+            logger.error(f"User {user_id}, Session {session_id}: Erro inesperado durante a chamada do serviço de denoising: {e}", exc_info=True)
+            denoise_status = "denoise_send_failed"
+            denoise_message = f"Erro inesperado durante a chamada do serviço de denoising: {e}"
+
+        # Salva/Atualiza informações no MongoDB com o status final da tentativa de denoising
         try:
-            final_audios_collection.insert_one({
-                "session_id": session_id,
+            # Tenta encontrar o documento existente para atualizar
+            existing_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id})
+            
+            update_fields = {
                 "user_id": user_id,
                 "filename": filename, 
                 "content_type": content_type,
                 "saved_m4a_path": saved_m4a_path, 
-                "processed_wav_path": processed_wav_path, 
-                "status": denoise_status, 
+                "processed_wav_path": processed_wav_path_temp, # Caminho para o WAV temporário
+                "status": denoise_status, # Status da tentativa de denoising
                 "denoise_message": denoise_message,
-                "created_at": time.time()
-            })
-            logger.info(f"Final audio info for session {session_id} saved to MongoDB with denoise status.")
+                "created_at": existing_doc.get("created_at", time.time()), # Mantém o timestamp original se existir
+                "last_updated_at": time.time(), # Novo timestamp de atualização
+                "final_denoised_path": processed_audio_path_for_client # Se o denoising foi síncrono e retornou o path
+            }
+
+            result_mongo_upload = final_audios_collection.update_one(
+                {"session_id": session_id, "user_id": user_id},
+                {"$set": update_fields},
+                upsert=True
+            )
+            if result_mongo_upload.upserted_id:
+                logger.info(f"User {user_id}, Session {session_id}: Novo documento MongoDB INSERIDO (upload inicial/denoising). ID: {result_mongo_upload.upserted_id}")
+            elif result_mongo_upload.modified_count > 0:
+                logger.info(f"User {user_id}, Session {session_id}: Documento MongoDB ATUALIZADO (upload inicial/denoising).")
+            else:
+                logger.warning(f"User {user_id}, Session {session_id}: Documento MongoDB NÃO FOI INSERIDO/ATUALIZADO.")
+
         except Exception as mongo_err:
-            logger.error(f"Error saving final audio info to MongoDB: {str(mongo_err)}", exc_info=True)
+            logger.error(f"User {user_id}, Session {session_id}: Erro CRÍTICO ao salvar informações no MongoDB (rota /upload): {str(mongo_err)}", exc_info=True)
 
-        # Clean up session resources (removes M4A, keeps WAV for potential serving by this app)
+        # Limpa recursos M4A e WAV temporário (o WAV temporário só é limpo aqui se o denoising for síncrono e bem-sucedido)
         try:
-            audio_processor.cleanup(session_id)
-            logger.info(f"Session {session_id} resources cleaned up after sending to denoise service.")
+            audio_processor.cleanup(session_id, cleanup_m4a=True, cleanup_temp_wav=(denoise_status == "denoised_completed"))
+            logger.info(f"User {user_id}, Session {session_id}: Recursos M4A e/ou WAV temporário limpos após o envio para o serviço de denoising.")
         except Exception as cleanup_err:
-            logger.error(f"Error cleaning up session resources {session_id}: {str(cleanup_err)}", exc_info=True)
-
-        # Remove session from the list of active sessions (in memory)
-        if session_id in active_sessions:
-            del active_sessions[session_id]
-            logger.info(f"Session {session_id} removed from active_sessions.")
+            logger.error(f"User {user_id}, Session {session_id}: Erro ao limpar recursos para a sessão: {str(cleanup_err)}", exc_info=True)
 
         response_data = {
             "session_id": session_id,
-            "message": "Final audio uploaded, processed, and sent for denoising.",
+            "message": denoise_message,
             "denoise_service_status": denoise_status,
-            "denoise_service_message": denoise_message
+            "denoise_service_message": denoise_message, # Redundante, mas útil para o frontend
+            "processed_audio_path": processed_audio_path_for_client # Inclui o path se disponível
         }
-        logger.info(f"Upload response: {response_data}")
+        logger.info(f"User {user_id}, Session {session_id}: Resposta de upload: {response_data}")
         return jsonify(response_data), 200
 
     except Exception as e:
-        logger.error(f"Unexpected error in /upload endpoint: {str(e)}", exc_info=True)
-        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+        logger.error(f"User {user_id}: Erro inesperado no endpoint /upload: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Erro interno do servidor: {str(e)}"}), 500
     
-
-@app.route('/process/<session_id>', methods=['POST'])
-def process_audio(session_id):
+@app.route('/audio/<session_id>', methods=['GET'])
+def get_audio(session_id):
     """
-    Endpoint to process the final audio file of a session.
-    Converts the M4A audio to WAV.
-    NOTE: With the /upload route now handling processing, this route might become redundant
-    or serve a different, explicit processing trigger.
+    Endpoint para recuperar o áudio processado de uma sessão.
+    Serve o arquivo WAV final denoised da pasta 'processed_audios'.
+    Não requer autenticação JWT, usa "anonymous_user" se não logado.
     """
+    user_id = "anonymous_user"
     try:
-        # Authentication
-        user_id = get_user_id_from_request()
-        if not user_id:
-            logger.warning(f"Attempted to process session {session_id} without authentication or invalid token.")
-            return jsonify({'error': 'User not authenticated or invalid token'}), 401
+        user_id = get_user_id_from_token() or "anonymous_user"
+        logger.info(f"User {user_id}: Requisição /audio/{session_id} recebida.")
 
-        # Check if the session exists and has an uploaded audio
-        # We now also check MongoDB as the primary source of truth if active_sessions is empty
-        mongo_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id, "saved_m4a_path": {"$ne": None}})
-        if not mongo_doc:
-            logger.warning(f"Session {session_id} not found in MongoDB or M4A not uploaded for processing.")
+        audio_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id})
+        
+        if not audio_doc:
+            logger.warning(f"User {user_id}, Session {session_id}: Documento de áudio não encontrado no MongoDB.")
             return jsonify({
                 "status": "error",
-                "message": "Session not found or M4A audio not uploaded/ready for processing",
+                "message": "Arquivo de áudio não encontrado ou ainda não processado",
                 "session_id": session_id
             }), 404
         
-        # If found in MongoDB, ensure audio_processor's session_data is populated for processing
+        file_to_serve_path = audio_doc.get('final_denoised_path')
+        
+        if not file_to_serve_path:
+            logger.warning(f"User {user_id}, Session {session_id}: Caminho do áudio denoised final não definido. Áudio não pronto para ser servido.")
+            return jsonify({
+                "status": "processing", # Indica que pode estar em processamento
+                "message": "Áudio processado final ainda não disponível.",
+                "session_id": session_id,
+                "current_status": audio_doc.get('status', 'unknown') # Retorna o status atual do MongoDB
+            }), 202 # Retorna 202 Accepted para indicar que está em andamento
+
+        logger.debug(f"User {user_id}, Session {session_id}: Tentando servir áudio do caminho: {file_to_serve_path}")
+
+        if not os.path.exists(file_to_serve_path):
+            logger.warning(f"User {user_id}, Session {session_id}: Arquivo de áudio não encontrado no sistema de arquivos em {file_to_serve_path}.")
+            # Se o path existe no MongoDB mas o arquivo não, atualize o status
+            final_audios_collection.update_one(
+                {"session_id": session_id, "user_id": user_id},
+                {"$set": {"status": "file_not_found_on_disk", "denoise_message": "Arquivo denoised não encontrado no disco."}}
+            )
+            return jsonify({
+                "status": "error",
+                "message": "Arquivo de áudio não encontrado no servidor.",
+                "session_id": session_id
+            }), 404
+
+        logger.info(f"User {user_id}, Session {session_id}: Servindo arquivo de áudio: {file_to_serve_path}")
+        return send_file(file_to_serve_path, mimetype='audio/wav')
+
+    except Exception as e:
+        logger.error(f"User {user_id}, Session {session_id}: Erro ao recuperar áudio: {str(e)}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": f"Erro ao recuperar áudio: {str(e)}",
+            "session_id": session_id
+        }), 500
+
+@app.route('/audios/list', methods=['GET'])
+def list_audios():
+    """
+    Endpoint para listar todos os arquivos de áudio para o usuário logado (ou anônimo).
+    Retorna APENAS os áudios que foram marcados com o status "denoised_completed" e têm um 'final_denoised_path'.
+    """
+    user_id = "anonymous_user"
+    try:
+        user_id = get_user_id_from_token() or "anonymous_user"
+        logger.info(f"User {user_id}: Requisição /audios/list recebida.")
+
+        # Busca APENAS os áudios para este user_id que foram FINALIZADOS e têm o caminho denoised
+        user_audios = final_audios_collection.find(
+            {
+                "user_id": user_id,
+                "final_denoised_path": {"$ne": None}, # Garante que o caminho final existe
+                "status": "denoised_completed"        # Garante que o status é de completo
+            }
+        ).sort("created_at", -1) # Ordena por tempo de criação, mais novo primeiro
+
+        audio_list = []
+        for audio_doc in user_audios:
+            session_id = audio_doc.get("session_id")
+            base_api_url = request.url_root.rstrip('/')
+            
+            # A URL do áudio sempre aponta para o endpoint /audio/<session_id>
+            audio_url = f"{base_api_url}/audio/{session_id}"
+
+            audio_list.append({
+                "id": str(audio_doc["_id"]),
+                "session_id": session_id,
+                "title": f"Gravação Processada ({time.strftime('%d/%m/%Y %H:%M', time.localtime(audio_doc['created_at']))})",
+                "path": audio_url,
+                "created_at": audio_doc["created_at"],
+                "status": audio_doc.get("status", "unknown") # Inclui o status para que o frontend possa exibir
+            })
+        
+        logger.info(f"User {user_id}: Retornando {len(audio_list)} áudios *processados* para o usuário.")
+        return jsonify(audio_list), 200
+
+    except Exception as e:
+        logger.error(f"User {user_id}: Erro ao listar áudios: {str(e)}", exc_info=True)
+        return jsonify({'error': f"Erro interno do servidor: {str(e)}"}), 500
+    
+@app.route('/audio/<session_id>', methods=['DELETE'])
+def delete_audio(session_id):
+    """
+    Endpoint para deletar um arquivo de áudio processado e seus metadados.
+    """
+    user_id = "anonymous_user"
+    try:
+        user_id = get_user_id_from_token() or "anonymous_user"
+        logger.info(f"User {user_id}: Requisição /audio/{session_id} DELETE recebida.")
+
+        audio_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id})
+
+        if not audio_doc:
+            logger.warning(f"User {user_id}, Session {session_id}: Áudio não encontrado para exclusão.")
+            return jsonify({'error': 'Áudio não encontrado ou você não tem permissão para excluí-lo'}), 404
+
+        # Obtém os caminhos para M4A (se ainda existir), WAV temporário e WAV denoised final
+        saved_m4a_path = audio_doc.get("saved_m4a_path")
+        processed_wav_path_temp = audio_doc.get("processed_wav_path")
+        final_denoised_path = audio_doc.get("final_denoised_path")
+
+        # Exclui os arquivos do sistema de arquivos se existirem
+        files_to_delete = [saved_m4a_path, processed_wav_path_temp, final_denoised_path]
+        for file_path in files_to_delete:
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    logger.info(f"User {user_id}, Session {session_id}: Arquivo excluído: {file_path}")
+                except OSError as e:
+                    logger.warning(f"User {user_id}, Session {session_id}: Não foi possível excluir o arquivo {file_path}: {e}")
+            else:
+                logger.debug(f"User {user_id}, Session {session_id}: Arquivo não encontrado no sistema de arquivos para deletar: {file_path}")
+
+        # Exclui o documento do MongoDB
+        result_mongo_delete = final_audios_collection.delete_one({"session_id": session_id, "user_id": user_id})
+        if result_mongo_delete.deleted_count > 0:
+            logger.info(f"User {user_id}, Session {session_id}: Metadados de áudio excluídos do MongoDB.")
+        else:
+            logger.warning(f"User {user_id}, Session {session_id}: Metadados de áudio NÃO FORAM EXCLUÍDOS do MongoDB.")
+
+        return jsonify({'message': 'Áudio excluído com sucesso'}), 200
+
+    except Exception as e:
+        logger.error(f"User {user_id}, Session {session_id}: Erro ao excluir áudio: {str(e)}", exc_info=True)
+        return jsonify({'error': f"Erro interno do servidor: {str(e)}"}), 500
+
+@app.route('/clear_audio', methods=['POST'])
+def clear_audio():
+    """
+    Endpoint para receber um arquivo de áudio de outro microsserviço (o serviço de denoising)
+    e salvá-lo diretamente na pasta processed_output_folder.
+    Também atualiza o registro do MongoDB para a sessão correspondente.
+    Este endpoint não requer autenticação JWT, pois é chamado internamente por outro serviço.
+    """
+    user_id = "anonymous_user"
+    session_id = "anonymous_session"
+    try:
+        # Obtém session_id e user_id dos dados do formulário (enviado pelo microsserviço)
+        session_id_from_form = request.form.get('session_id')
+        user_id_from_form = request.form.get('user_id')
+        
+        # Prioriza o user_id vindo do microsserviço
+        if user_id_from_form:
+            user_id = user_id_from_form
+
+        if session_id_from_form:
+            session_id = session_id_from_form
+
+        if not session_id:
+            logger.error("Requisição /clear_audio sem session_id. Não é possível associar ao documento existente.")
+            return jsonify({"error": "session_id é obrigatório para /clear_audio"}), 400
+        
+        logger.info(f"User {user_id}, Session {session_id}: Requisição /clear_audio recebida.")
+
+        if 'audio' not in request.files:
+            logger.error(f"User {user_id}, Session {session_id}: Nenhum arquivo de áudio enviado na requisição /clear_audio.")
+            return jsonify({"error": "Nenhum arquivo de áudio enviado"}), 400
+
+        audio_file = request.files['audio']
+        if not audio_file or audio_file.filename == '':
+            logger.error(f"User {user_id}, Session {session_id}: Arquivo de áudio vazio ou sem nome em /clear_audio.")
+            return jsonify({"error": "Arquivo de áudio vazio"}), 400
+
+        original_filename = request.form.get('filename', audio_file.filename) # Tenta pegar o nome original do form data
+        if not original_filename:
+            original_filename = f"denoised_audio_{session_id}.wav" # Fallback
+            
+        # Gera um nome de arquivo único para o áudio salvo na pasta processed_output_folder
+        # Garante que o nome do arquivo termine com .wav
+        base_name, ext = os.path.splitext(original_filename)
+        unique_filename = f"denoised_{session_id}_{uuid.uuid4().hex}{ext if ext else '.wav'}"
+        if not unique_filename.lower().endswith('.wav'):
+            unique_filename += '.wav'
+        
+        audio_content = audio_file.read()
+
+        saved_processed_path = audio_processor.save_processed_audio_from_external(
+            audio_content, unique_filename
+        )
+
+        if not os.path.exists(saved_processed_path) or os.path.getsize(saved_processed_path) == 0:
+            logger.error(f"User {user_id}, Session {session_id}: Arquivo de áudio NÃO foi salvo ou está vazio após a tentativa de salvar: {saved_processed_path}")
+            # Tentar atualizar o status no MongoDB para indicar falha de salvamento do denoised
+            final_audios_collection.update_one(
+                {"session_id": session_id, "user_id": user_id},
+                {"$set": {"status": "denoised_file_save_failed", "denoise_message": "Falha ao salvar o arquivo denoised retornado.", "last_updated_at": time.time()}}
+            )
+            return jsonify({"error": "Falha ao salvar o arquivo de áudio ou o arquivo está vazio após salvar"}), 500
+        
+        logger.info(f"User {user_id}, Session {session_id}: Áudio recebido e salvo com sucesso em processed_output_folder: {saved_processed_path} (Tamanho: {os.path.getsize(saved_processed_path)} bytes)")
+
+        # Atualiza o registro do MongoDB para esta sessão
+        result_mongo_clear = final_audios_collection.update_one(
+            {"session_id": session_id, "user_id": user_id},
+            {"$set": {
+                "final_denoised_path": saved_processed_path,
+                "status": "denoised_completed", # Status final de sucesso!
+                "denoise_message": "Áudio denoised e salvo com sucesso.",
+                "last_updated_at": time.time()
+            }},
+            upsert=True # Se o documento não existir (o que pode acontecer se o upload original falhou antes de salvar no mongo)
+        )
+        if result_mongo_clear.upserted_id:
+            logger.info(f"User {user_id}, Session {session_id}: Novo documento MongoDB INSERIDO (áudio denoised). ID: {result_mongo_clear.upserted_id}")
+        elif result_mongo_clear.modified_count > 0:
+            logger.info(f"User {user_id}, Session {session_id}: Documento MongoDB ATUALIZADO (áudio denoised).")
+        else:
+            logger.warning(f"User {user_id}, Session {session_id}: Documento MongoDB NÃO FOI INSERIDO/ATUALIZADO por /clear_audio. Isso pode indicar um session_id incorreto ou um documento já finalizado/excluído.")
+
+        # Limpa o arquivo WAV temporário agora que o áudio denoised final foi salvo
+        try:
+            # Precisa garantir que o processed_wav_path esteja no documento para limpar
+            audio_doc_for_cleanup = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id})
+            if audio_doc_for_cleanup and audio_doc_for_cleanup.get("processed_wav_path"):
+                temp_wav_path = audio_doc_for_cleanup["processed_wav_path"]
+                if os.path.exists(temp_wav_path):
+                    os.remove(temp_wav_path)
+                    logger.info(f"User {user_id}, Session {session_id}: WAV temporário limpo: {temp_wav_path}.")
+                else:
+                    logger.warning(f"User {user_id}, Session {session_id}: WAV temporário não encontrado no disco para limpeza: {temp_wav_path}.")
+            else:
+                logger.debug(f"User {user_id}, Session {session_id}: Nenhum WAV temporário registrado para limpeza.")
+        except Exception as cleanup_err:
+            logger.error(f"User {user_id}, Session {session_id}: Erro ao limpar WAV temporário: {str(cleanup_err)}", exc_info=True)
+
+
+        # Remove os dados de sessão do audio_processor, pois o processamento está completo
+        audio_processor.remove_session_data(session_id)
+        logger.info(f"User {user_id}, Session {session_id}: Dados da sessão removidos do AudioProcessor.")
+
+
+        return jsonify({
+            "status": "success",
+            "message": "Áudio salvo com sucesso no diretório processado e metadados atualizados",
+            "filename": unique_filename,
+            "session_id": session_id,
+            "user_id": user_id,
+            "path": f"{request.url_root.rstrip('/')}/processed/{unique_filename}" # Usa /processed para servir
+        }), 200
+
+    except Exception as e:
+        logger.error(f"User {user_id}: Erro no endpoint /clear_audio: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Erro interno do servidor: {str(e)}"}), 500
+
+# --- Rotas que podem ser desativadas ou simplificadas ---
+# A rota /process/<session_id> parece redundante agora que /upload lida com a conversão e envio.
+# Eu a removeria a menos que haja um caso de uso específico para re-processar.
+@app.route('/process/<session_id>', methods=['POST'])
+def process_audio(session_id):
+    """
+    Endpoint para processar o arquivo de áudio final de uma sessão.
+    Converte o áudio M4A para WAV.
+    NOTA: Com a rota /upload agora lidando com o processamento, esta rota pode se tornar redundante
+    ou servir como um gatilho de processamento explícito diferente.
+    Não requer autenticação JWT, usa "anonymous_user" se não logado.
+    """
+    logger.warning(f"Endpoint /process/{session_id} foi chamado. Considerar se esta rota ainda é necessária ou deve ser integrada em /upload.")
+    user_id = "anonymous_user"
+    try:
+        user_id = get_user_id_from_token() or "anonymous_user"
+        logger.info(f"User {user_id}: Requisição /process/{session_id} recebida.")
+
+        mongo_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id, "saved_m4a_path": {"$ne": None}})
+        if not mongo_doc:
+            logger.warning(f"User {user_id}, Session {session_id}: Sessão não encontrada no MongoDB ou M4A não enviado/pronto para processamento.")
+            return jsonify({
+                "status": "error",
+                "message": "Sessão não encontrada ou áudio M4A não enviado/pronto para processamento",
+                "session_id": session_id
+            }), 404
+        
         if session_id not in audio_processor.session_data:
             audio_processor.session_data[session_id] = {
                 'final_m4a_path': mongo_doc['saved_m4a_path'],
                 'status': mongo_doc.get('status', 'uploaded')
             }
-            logger.info(f"Session {session_id} re-initialized from MongoDB for processing.")
+            logger.info(f"User {user_id}, Session {session_id}: Sessão re-inicializada do MongoDB para processamento.")
 
-
-        logger.info(f"Starting processing for session: {session_id}")
+        logger.info(f"User {user_id}, Session {session_id}: Iniciando processamento.")
         result = audio_processor.process_session(session_id)
         
         if result["status"] == "error":
-            logger.error(f"Error processing session {session_id}: {result['message']}")
-            return jsonify(result), 500
-
-        logger.info(f"Session {session_id} processed successfully. Output: {result.get('output_path')}")
-
-        # Update MongoDB with the processed WAV path and status
-        try:
-            # Usar 'processed_wav_path' para consistência com o que é salvo no /upload
+            logger.error(f"User {user_id}, Session {session_id}: Erro ao processar sessão: {result['message']}")
+            # Atualiza o status no MongoDB para indicar falha na conversão
             final_audios_collection.update_one(
                 {"session_id": session_id, "user_id": user_id},
-                {"$set": {"processed_wav_path": result['output_path'], "status": "processed"}}
+                {"$set": {"status": "conversion_failed", "denoise_message": result['message'], "last_updated_at": time.time()}}
             )
-            logger.info(f"MongoDB updated with processed path for session {session_id}.")
-        except Exception as mongo_update_err:
-            logger.error(f"Error updating MongoDB with processed path: {str(mongo_update_err)}", exc_info=True)
-            # Log the error, but don't fail the request if processing was successful
+            return jsonify(result), 500
 
-        # Clean up session resources after successful processing (removes M4A, keeps WAV)
+        logger.info(f"User {user_id}, Session {session_id}: Sessão processada com sucesso. Saída: {result.get('output_path')}")
+
+        # Atualiza o MongoDB com o caminho WAV processado e o status
         try:
-            audio_processor.cleanup(session_id)
-            logger.info(f"Session {session_id} resources cleaned up after processing.")
+            result_mongo_process = final_audios_collection.update_one(
+                {"session_id": session_id, "user_id": user_id},
+                {"$set": {"processed_wav_path": result['output_path'], "status": "processed_wav_generated", "last_updated_at": time.time()}}
+            )
+            if result_mongo_process.modified_count > 0:
+                logger.info(f"User {user_id}, Session {session_id}: MongoDB atualizado com o caminho processado.")
+            else:
+                logger.warning(f"User {user_id}, Session {session_id}: Documento MongoDB NÃO FOI ATUALIZADO (processamento).")
+        except Exception as mongo_update_err:
+            logger.error(f"User {user_id}, Session {session_id}: Erro ao atualizar MongoDB com o caminho processado (rota /process): {str(mongo_update_err)}", exc_info=True)
+        
+        # Não limpa o WAV temporário aqui, pois ele ainda será enviado para o denoising
+        # A limpeza do WAV temporário deve ocorrer APENAS após o /clear_audio retornar sucesso.
+        try:
+            audio_processor.cleanup(session_id, cleanup_m4a=True, cleanup_temp_wav=False)
+            logger.info(f"User {user_id}, Session {session_id}: Recursos M4A limpos após o processamento.")
         except Exception as cleanup_err:
-            logger.error(f"Error cleaning up session resources {session_id}: {str(cleanup_err)}", exc_info=True)
-            # Cleanup failed, but processing was successful, so we don't return 500 error to the client.
-            # Just log the issue.
-
-        # Remove session from the list of active sessions (in memory)
-        if session_id in active_sessions:
-            del active_sessions[session_id]
-            logger.info(f"Session {session_id} removed from active_sessions.")
-
+            logger.error(f"User {user_id}, Session {session_id}: Erro ao limpar recursos M4A: {str(cleanup_err)}", exc_info=True)
+            
         return jsonify(result), 200
 
     except Exception as e:
-        logger.error(f"Unexpected error in /process/{session_id} endpoint: {str(e)}", exc_info=True)
+        logger.error(f"User {user_id}, Session {session_id}: Erro inesperado no endpoint /process: {str(e)}", exc_info=True)
         return jsonify({
             "status": "error",
-            "message": f"Internal server error processing audio: {str(e)}",
+            "message": f"Erro interno do servidor ao processar áudio: {str(e)}",
             "session_id": session_id
         }), 500
 
-@app.route('/audio/<session_id>', methods=['GET'])
-def get_audio(session_id):
-    """
-    Endpoint to retrieve the processed audio of a session.
-    Serves the final WAV file from the converted_folder.
-    """
-    try:
-        user_id = get_user_id_from_request()
-        if not user_id:
-            logger.warning(f"Attempted to retrieve audio for session {session_id} without authentication or invalid token.")
-            # For now, let's allow it if the file exists, but log the warning.
-            # If you want strict authentication, uncomment the return below:
-            # return jsonify({'error': 'User not authenticated or invalid token'}), 401
-
-        # Retrieve the processed_wav_path from MongoDB
-        # Usar 'processed_wav_path' para buscar no MongoDB
-        audio_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id, "processed_wav_path": {"$ne": None}})
-        if not audio_doc:
-            logger.warning(f"Processed audio file not found in MongoDB for session {session_id} for user {user_id}.")
-            return jsonify({
-                "status": "error",
-                "message": "Audio file not found or not yet processed",
-                "session_id": session_id
-            }), 404
-        
-        processed_file_path = audio_doc['processed_wav_path']
-
-        # Verificar se o arquivo existe no diretório correto (temp_audio)
-        # O nome do arquivo no disco é 'converted_{session_id}.wav'
-        expected_filename_on_disk = f'converted_{session_id}.wav'
-        expected_full_path = os.path.join(audio_processor.converted_folder, expected_filename_on_disk)
-
-        if not os.path.exists(expected_full_path):
-            logger.warning(f"Processed audio file not found on filesystem for session {session_id} at {expected_full_path}")
-            return jsonify({
-                "status": "error",
-                "message": "Audio file not found on server or not yet processed",
-                "session_id": session_id
-            }), 404
-
-        logger.info(f"Serving processed file: {expected_full_path}")
-        return send_file(expected_full_path, mimetype='audio/wav')
-
-    except Exception as e:
-        logger.error(f"Error retrieving audio for session {session_id}: {str(e)}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "message": f"Error retrieving audio: {str(e)}",
-            "session_id": session_id
-        }), 500
 
 @app.route('/processed/<filename>')
 def serve_processed_file(filename):
     """
-    Endpoint to serve processed files directly by filename.
-    Useful if the client already knows the final filename (e.g., converted_SESSIONID.wav).
+    Endpoint para servir arquivos processados diretamente pelo nome do arquivo.
+    Esta rota agora serve exclusivamente da pasta processed_output_folder.
+    Não requer autenticação JWT.
     """
     try:
-        # Usar audio_processor.converted_folder
-        logger.info(f"Serving processed file: {filename} from directory {audio_processor.converted_folder}")
-        return send_from_directory(audio_processor.converted_folder, filename)
+        full_path = os.path.join(audio_processor.processed_output_folder, filename)
+        logger.info(f"Servindo arquivo processado: {filename} do diretório {audio_processor.processed_output_folder}")
+        return send_from_directory(audio_processor.processed_output_folder, filename)
     except Exception as e:
-        logger.error(f"Error serving file {filename}: {str(e)}", exc_info=True)
-        return jsonify({'error': 'File not found or internal error'}), 404
-
-# NEW ENDPOINT: List processed audios for the authenticated user
-@app.route('/audios/list', methods=['GET'])
-def list_audios():
-    """
-    Endpoint to list all processed audio files for the authenticated user.
-    """
-    try:
-        user_id = get_user_id_from_request()
-        if not user_id:
-            logger.warning(f"Attempted to list audios without authentication or invalid token.")
-            return jsonify({'error': 'User not authenticated or invalid token'}), 401
-
-        # Find all processed audios for this user
-        # Usar 'processed_wav_path' e considerar status de denoising
-        user_audios = final_audios_collection.find(
-            {"user_id": user_id, "processed_wav_path": {"$ne": None},
-             "$or": [{"status": "processed"}, {"status": "sent_for_denoising"}]} # Listar se foi processado ou enviado para denoising
-        ).sort("created_at", -1) # Sort by creation time, newest first
-
-        audio_list = []
-        for audio_doc in user_audios:
-            session_id = audio_doc.get("session_id")
-            # Construct the URL for the processed WAV file
-            base_api_url = request.url_root.rstrip('/') # Remove trailing slash
-            audio_url = f"{base_api_url}/audio/{session_id}"
-
-            audio_list.append({
-                "id": str(audio_doc["_id"]), # MongoDB ObjectId as string
-                "session_id": session_id,
-                "title": f"Gravação {time.strftime('%Y-%m-%d %H:%M', time.localtime(audio_doc['created_at']))}",
-                "path": audio_url, # The URL to fetch the WAV file
-                "created_at": audio_doc["created_at"]
-            })
-        
-        logger.info(f"Returning {len(audio_list)} processed audios for user {user_id}.")
-        return jsonify(audio_list), 200
-
-    except Exception as e:
-        logger.error(f"Error listing audios for user {user_id}: {str(e)}", exc_info=True)
-        return jsonify({'error': f"Internal server error: {str(e)}"}), 500
-
-# NEW ENDPOINT: Delete processed audio
-@app.route('/audio/<session_id>', methods=['DELETE'])
-def delete_audio(session_id):
-    """
-    Endpoint to delete a processed audio file and its metadata.
-    """
-    try:
-        user_id = get_user_id_from_request()
-        if not user_id:
-            logger.warning(f"Attempted to delete audio for session {session_id} without authentication or invalid token.")
-            return jsonify({'error': 'User not authenticated or invalid token'}), 401
-
-        # Find the audio document in MongoDB
-        audio_doc = final_audios_collection.find_one({"session_id": session_id, "user_id": user_id})
-
-        if not audio_doc:
-            logger.warning(f"Audio for session {session_id} not found for user {user_id}.")
-            return jsonify({'error': 'Audio not found or you do not have permission to delete it'}), 404
-
-        # Get paths for both M4A (if it still exists) and WAV files
-        saved_m4a_path = audio_doc.get("saved_m4a_path")
-        # Usar 'processed_wav_path' para o caminho do WAV
-        processed_wav_path = audio_doc.get("processed_wav_path")
-
-        # Delete the M4A file from the filesystem if it exists
-        if saved_m4a_path and os.path.exists(saved_m4a_path):
-            try:
-                os.remove(saved_m4a_path)
-                logger.info(f"Deleted M4A audio file: {saved_m4a_path}")
-            except OSError as e:
-                logger.warning(f"Could not delete M4A file {saved_m4a_path}: {e}")
-        else:
-            logger.warning(f"M4A audio file not found on filesystem for session {session_id}: {saved_m4a_path}")
-
-        # Delete the WAV file from the filesystem if it exists
-        if processed_wav_path and os.path.exists(processed_wav_path):
-            try:
-                os.remove(processed_wav_path)
-                logger.info(f"Deleted processed WAV audio file: {processed_wav_path}")
-            except OSError as e:
-                logger.warning(f"Could not delete WAV file {processed_wav_path}: {e}")
-        else:
-            logger.warning(f"Processed WAV audio file not found on filesystem for session {session_id}: {processed_wav_path}")
-
-        # Delete the document from MongoDB
-        final_audios_collection.delete_one({"session_id": session_id, "user_id": user_id})
-        logger.info(f"Deleted audio metadata for session {session_id} from MongoDB.")
-
-        # Also clean up the upload directory if it still exists (should have been cleaned by process_session)
-        session_upload_dir = os.path.join(audio_processor.upload_folder, session_id)
-        if os.path.exists(session_upload_dir):
-            shutil.rmtree(session_upload_dir)
-            logger.info(f"Cleaned up upload directory for session {session_id}.")
-
-        return jsonify({'message': 'Audio deleted successfully'}), 200
-
-    except Exception as e:
-        logger.error(f"Error deleting audio for session {session_id}: {str(e)}", exc_info=True)
-        return jsonify({'error': f"Internal server error: {str(e)}"}), 500
-
-@app.route('/clear_audio', methods=['POST'])
-def clear_audio():
-    """
-    Endpoint to receive an audio file from another microservice
-    and save it directly into the converted directory.
-    """
-    try:
-        if 'audio' not in request.files:
-            logger.error("No audio file sent in the /clear_audio request.")
-            return jsonify({"error": "No audio file sent"}), 400
-
-        audio_file = request.files['audio']
-        if not audio_file or audio_file.filename == '':
-            logger.error("Empty or nameless audio file.")
-            return jsonify({"error": "Empty audio file"}), 400
-
-        # Generate a unique filename for the saved audio
-        unique_filename = f"cleared_audio_{uuid.uuid4().hex}.wav" 
-        # Usar audio_processor.converted_folder
-        save_path = os.path.join(audio_processor.converted_folder, unique_filename)
-
-        audio_file.save(save_path)
-        logger.info(f"Audio received and saved to converted directory: {save_path}")
-
-        return jsonify({
-            "status": "success",
-            "message": "Audio successfully saved to converted directory",
-            "filename": unique_filename,
-            "path": f"{request.url_root.rstrip('/')}/processed/{unique_filename}" # Usa /processed para servir
-        }), 200
-
-    except Exception as e:
-        logger.error(f"Error in /clear_audio endpoint: {str(e)}", exc_info=True)
-        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+        logger.error(f"Erro ao servir arquivo {filename}: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Arquivo não encontrado ou erro interno'}), 404
 
 
 if __name__ == '__main__':

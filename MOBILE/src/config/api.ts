@@ -8,7 +8,8 @@ export const API_ENDPOINTS = {
   GET_STATUS: '/status',
   GET_AUDIO: '/audio',
   STREAM_AUDIO: '/stream',
-  CLEANUP: '/cleanup'
+  CLEANUP: '/cleanup',
+  LIST_AUDIOS: '/audios/list',
 };
 
 // Configuração do timeout para requisições

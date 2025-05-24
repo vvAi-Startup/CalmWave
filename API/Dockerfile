@@ -1,26 +1,26 @@
-from python:3.9-slim
+FROM python:3.9-slim
 
-run apt-get update && apt-get install -y \ 
+RUN apt-get update && apt-get install -y \
     ffmpeg \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-workdir /app
+WORKDIR /app
 
-copy requirements.txt .
+COPY requirements.txt .
 
-run pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-copy . .
+COPY . .
 
-run mkdir -p uploads processed
+RUN mkdir -p uploads processed
 
 ENV PYTHONUNBUFFERED=1 \
- FLASK_APP=app.py \
- FLASK_RUN_HOST=0.0.0.0\
- FLASK_ENV=production
+    FLASK_APP=app.py \
+    FLASK_RUN_HOST=0.0.0.0 \
+    FLASK_ENV=production
 
-expose 5000
+EXPOSE 5000
 
-cmd ["python", "app.py"]
+CMD ["python", "app.py"]
