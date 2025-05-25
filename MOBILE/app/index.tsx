@@ -23,7 +23,9 @@ export default function Index() {
       <Stack.Navigator 
         initialRouteName="Login"
         screenOptions={{
-          headerShown: false
+          headerShown: false,
+          animation: 'fade',
+
         }}
       > 
         <Stack.Screen name="Login" component={LoginScreen} /> 

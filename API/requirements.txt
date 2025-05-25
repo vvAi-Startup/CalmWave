@@ -1,8 +1,13 @@
 flask
 flask-cors
+Flask-RESTful
 Werkzeug
 librosa
 numpy
 docker
 PyJWT
 flask-pymongo 
+python-dotenv
+pydub
+soundfile
+flask_jwt_extended

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { TouchableOpacity, View, Text, Image, Alert } from "react-native";
 import { Input } from "../../components/Input";
@@ -18,6 +19,7 @@ type NavigationProp = StackNavigationProp<RootStackParamList>;
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+
   const [loading, setLoading] = useState(false);
   const navigation = useNavigation<NavigationProp>();
 
@@ -42,11 +44,9 @@ export default function LoginScreen() {
       if (response.ok) {
         try {
           await AsyncStorage.setItem("@CalmWave:token", data.token);
-          console.log("Token salvo:", data.token); // Verificação após salvar
           alert("Login realizado com sucesso.");
           navigation.navigate("Record");
         } catch (error) {
-          console.error("Erro ao salvar token:", error);
           alert("Erro ao salvar o token de autenticação."); // Alerta específico para erro ao salvar
         }
       } else if (response.status === 401) {
@@ -55,7 +55,6 @@ export default function LoginScreen() {
         alert(data.message || "Erro ao realizar login.");
       }
     } catch (error) {
-      console.error("Erro ao fazer login:", error);
       alert("Ocorreu um erro ao fazer login.");
     } finally {
       setLoading(false);
@@ -81,6 +80,7 @@ export default function LoginScreen() {
         secureTextEntry
       />
       <View style={styles.buttonContainer}>
+
         <TouchableOpacity style={styles.buttonlogin} onPress={handleLogin} disabled={loading}>
           <Text style={styles.buttonText}>{loading ? "Carregando..." : "Entrar"}</Text>
         </TouchableOpacity>

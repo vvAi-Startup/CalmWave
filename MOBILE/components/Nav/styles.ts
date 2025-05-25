@@ -29,5 +29,15 @@ export const styles = StyleSheet.create({
         padding: 10,
         height: '100%',
         marginBottom: 50
-    }, 
+    },
+    statusIconsContainer: {
+        flexDirection: 'row',
+        position: 'absolute',
+        bottom: 70, 
+        left: 20,
+        gap: 10, 
+        alignItems: 'center',
+      },
+      
+
 })

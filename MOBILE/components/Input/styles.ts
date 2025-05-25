@@ -5,6 +5,8 @@ export const styles = StyleSheet.create({
     marginBottom: 16,
     width: '60%',
     alignSelf: 'center',
+    color:'#000'
+
   },
   label: {
     fontSize: 32,
