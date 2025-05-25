@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "569648117882",
+    "project_id": "calm-wave-6c3a6",
+    "storage_bucket": "calm-wave-6c3a6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:569648117882:android:58c15774f6040ae4c3a3c3",
+        "android_client_info": {
+          "package_name": "com.mobileprojetointegrador.android"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnDE73Bb8Fg-w241zksYnboQk3KSv9MB4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

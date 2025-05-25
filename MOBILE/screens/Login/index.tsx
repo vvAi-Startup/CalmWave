@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { TouchableOpacity, View, Text, Image, Alert } from "react-native";
 import { Input } from "../../components/Input";
@@ -18,6 +19,7 @@ type NavigationProp = StackNavigationProp<RootStackParamList>;
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+
   const [loading, setLoading] = useState(false);
   const navigation = useNavigation<NavigationProp>();
 
@@ -78,6 +80,7 @@ export default function LoginScreen() {
         secureTextEntry
       />
       <View style={styles.buttonContainer}>
+
         <TouchableOpacity style={styles.buttonlogin} onPress={handleLogin} disabled={loading}>
           <Text style={styles.buttonText}>{loading ? "Carregando..." : "Entrar"}</Text>
         </TouchableOpacity>

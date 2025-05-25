@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TouchableOpacity, Image, Alert, ActivityIndicator } from "react-native";
 import { styles } from "./styles";
@@ -15,6 +16,8 @@ export default function RecordScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [timer, setTimer] = useState(0);
+  const [isServerConnected, setIsServerConnected] = useState(false);
+  const [isBluetoothConnected, setIsBluetoothConnected] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -57,10 +60,12 @@ export default function RecordScreen() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
+
     if (isRecording) {
       interval = setInterval(() => {
         setTimer((prev) => prev + 1);
       }, 1000);
+
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -176,6 +181,7 @@ export default function RecordScreen() {
         playsInSilentModeIOS: true,
       });
 
+
       const newSessionId = `session_${Date.now()}`;
       const { recording: newRecording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
 
@@ -210,6 +216,7 @@ export default function RecordScreen() {
     if (!recording) return;
 
     try {
+
       if (chunkInterval.current) {
         clearInterval(chunkInterval.current);
         chunkInterval.current = null;
@@ -220,6 +227,7 @@ export default function RecordScreen() {
       setAudioUri(uri);
       setRecording(null);
       setIsRecording(false);
+
 
       if (uri && sessionId && sessionDirectory.current) {
         setIsProcessing(true);
@@ -237,6 +245,7 @@ export default function RecordScreen() {
               text: 'Sim',
               onPress: async () => {
                 try {
+
                   await Sharing.shareAsync(finalChunkUri);
                 } catch (error) {
                   console.error('Erro ao abrir pasta:', error);
@@ -244,6 +253,7 @@ export default function RecordScreen() {
                 }
               }
             }
+
           ]);
         } catch (error) {
           console.error('Erro no processamento:', error);
@@ -305,17 +315,33 @@ export default function RecordScreen() {
             </View>
           </View>
         </TouchableOpacity>
-        {isRecording && <Text style={styles.timerText}>{formatTime(timer)}</Text>}
+             {isRecording && <Text style={styles.timerText}>{formatTime(timer)}</Text>}
         {isProcessing && (
           <View style={styles.processingContainer}>
             <ActivityIndicator size="large" color="#0000ff" />
             <Text style={styles.processingText}>Processando áudio...</Text>
           </View>
+            )}
+
+      <View style={styles.statusIconsContainer}>
+        {isServerConnected ? (
+          <Wave_verde width={36} height={36} />
+        ) : (
+          <Wave width={36} height={36} />
         )}
-        {uploadError && <Text style={styles.errorText}>{uploadError}</Text>}
+        <TouchableOpacity onPress={configuration}>
+          {isBluetoothConnected ? (
+            <Bluetooth_verde width={36} height={36} />
+          ) : (
+            <Bluetooth width={36} height={36} />
+          )}
+        </TouchableOpacity>
+          {uploadError && <Text style={styles.errorText}>{uploadError}</Text>}
         {isUploading && <Text style={styles.uploadingText}>Enviando áudio...</Text>}
       </View>
+
       <Nav />
     </View>
   );
 }
+export default RecordScreen
