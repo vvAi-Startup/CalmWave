@@ -4,3 +4,12 @@
 
 expo-env.d.ts
 # @end expo-cli
+
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.aac
+*.wma
+*.webm

@@ -36,3 +36,13 @@ build/
 dist/
 *.egg-info/
 .eggs/
+
+
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.aac
+*.wma
+*.webm
