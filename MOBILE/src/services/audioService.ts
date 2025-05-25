@@ -1,3 +1,4 @@
+// src/services/audioService.ts
 import { API_BASE_URL, API_ENDPOINTS, API_TIMEOUT } from '../config/api';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,30 +7,47 @@ const AUTH_TOKEN_KEY = '@CalmWave:token'; // Define a constant key for the token
 
 async function getAuthHeaders(): Promise<HeadersInit> {
   const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+  // Adaptação: Se não houver token, retornar um objeto vazio ou lançar erro dependendo da sua política
   return {
     'Accept': 'application/json',
-    'Authorization': `Bearer ${token}`,
+    'Authorization': `Bearer ${token || ''}`, // Garante que não é 'null' ou 'undefined'
   };
 }
 
-// Define o tipo para um item de áudio retornado pela API
+/**
+ * Define o tipo para um item de áudio retornado pela API.
+ * Adicionamos o campo 'status' que agora é retornado pelo backend.
+ */
 export type AudioListItem = {
-  id: string; // ID do MongoDB
+  id: string; // ID do MongoDB (_id)
   session_id: string;
   title: string;
-  path: string; // URL para o arquivo WAV processado
+  path?: string; // URL para o arquivo WAV processado (ou temporário, dependendo do status). Tornamos opcional.
   created_at: number; // Timestamp de criação
+  status: string; // Novo campo: o status atual do processamento do áudio (ex: "processed", "denoise_failed")
+};
+
+/**
+ * Define o tipo para a resposta do upload de áudio.
+ * Inclui campos para o status do serviço de denoising.
+ */
+export type UploadResponse = {
+  session_id: string;
+  message: string;
+  denoise_service_status: 'success' | 'denoise_send_failed' | 'denoise_processing_failed' | string; // Explicitamos os possíveis status
+  denoise_service_message?: string; // Mensagem detalhada do serviço de denoising (opcional)
+  processed_audio_path?: string; // Novo campo: o path para o áudio processado, se bem-sucedido
 };
 
 export const audioService = {
   /**
-   * Faz o upload do arquivo de áudio final para o servidor.
-   * Assume que este é sempre o arquivo de áudio completo.
+   * Faz o upload do arquivo de áudio final (M4A) para o servidor.
+   * A API agora processa (converte para WAV e envia para denoising) automaticamente após o upload.
    * @param audioUri URI local do arquivo de áudio final.
    * @param sessionId ID da sessão à qual o áudio pertence.
-   * @returns Resposta da API.
+   * @returns Resposta da API, incluindo o status do denoising e, se bem-sucedido, o caminho do áudio processado.
    */
-  async uploadAudio(audioUri: string, sessionId?: string): Promise<any> {
+  async uploadAudio(audioUri: string, sessionId?: string): Promise<UploadResponse> {
     try {
       const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
       if (!token) throw new Error('Token não encontrado');
@@ -44,12 +62,11 @@ export const audioService = {
         name: `final_audio.m4a`, // A fixed name for the final audio file
       } as any);
       formData.append('session_id', sessionId || '');
-      // chunk_number and is_final are still sent as the backend expects them,
-      // but their values are fixed as we're sending the full audio.
-      formData.append('chunk_number', '0'); 
-      formData.append('is_final', 'true'); 
+      formData.append('chunk_number', '0');
+      formData.append('is_final', 'true');
 
       const url = `${API_BASE_URL}${API_ENDPOINTS.UPLOAD_AUDIO}`;
+      console.log('URL de Upload:', url); // Log para depuração
       const headers = await getAuthHeaders();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
@@ -60,7 +77,7 @@ export const audioService = {
           body: formData,
           headers: {
             ...headers,
-            "content-type": "multipart/form-data", // Important for FormData
+            "content-type": "multipart/form-data", // Importante para FormData
           },
           signal: controller.signal,
         });
@@ -68,10 +85,17 @@ export const audioService = {
         clearTimeout(timeoutId);
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Erro ao fazer upload do áudio: ${response.status} - ${errorText}`);
+          // Tentar parsear o erro como JSON se possível, caso contrário usar texto
+          try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(`Erro ao fazer upload do áudio: ${response.status} - ${errorJson.message || errorText}`);
+          } catch {
+            throw new Error(`Erro ao fazer upload do áudio: ${response.status} - ${errorText}`);
+          }
         }
 
-        const responseData = await response.json();
+        const responseData: UploadResponse = await response.json();
+        // O backend deve retornar 'processed_audio_path' em caso de sucesso no denoising
         return { ...responseData, session_id: sessionId || responseData.session_id };
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
@@ -86,39 +110,56 @@ export const audioService = {
   },
 
   /**
-   * Solicita ao servidor para processar o áudio de uma sessão.
-   * @param sessionId ID da sessão a ser processada.
-   * @returns Resposta da API.
+   * Baixa o arquivo de áudio WAV processado do backend.
+   * @param path A URL completa do áudio a ser baixado (já deve ser o path do áudio processado)
+   * @returns O URI local do arquivo WAV baixado.
    */
-  async processAudio(sessionId: string): Promise<any> {
+  async downloadAudio(path: string): Promise<string> {
     try {
-      const url = `${API_BASE_URL}/process/${sessionId}`;
-      const headers = await getAuthHeaders();
+      const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+      if (!token) throw new Error('Token de autenticação não encontrado.');
+
+      // Extrai o nome do arquivo da URL para o nome local
+      const fileName = path.split('/').pop()?.split('?')[0];
+      const localUri = `${FileSystem.documentDirectory}audios/downloaded_processed_${fileName}.wav`;
+
+      console.log(`Tentando baixar de: ${path} para ${localUri}`);
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
       try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          signal: controller.signal,
+        const { uri, status } = await FileSystem.downloadAsync(path, localUri, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
         });
 
         clearTimeout(timeoutId);
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Erro ao processar o áudio: ${response.status} - ${errorText}`);
+
+        if (status !== 200) {
+          let errorBody = 'Unknown error';
+          // Tenta ler o corpo da resposta de erro apenas se o status não for 200
+          try {
+            const responseText = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+            errorBody = responseText;
+          } catch (readError) {
+            console.warn('Não foi possível ler o corpo da resposta de erro:', readError);
+          }
+          console.error('Download falhou com status:', status, 'Resposta de erro:', errorBody);
+          throw new Error(`Falha ao baixar áudio processado: Servidor respondeu com status ${status}. ${errorBody}`);
         }
 
-        return await response.json();
+        console.log('Áudio processado baixado para:', uri);
+        return uri;
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          throw new Error('Timeout ao processar o áudio');
+          throw new Error('Timeout ao baixar o áudio');
         }
         throw error;
       }
     } catch (error) {
-      console.error('Erro no processamento:', error);
+      console.error('Erro no download:', error);
       throw error;
     }
   },
@@ -130,7 +171,7 @@ export const audioService = {
   async testConnection(): Promise<boolean> {
     try {
       console.log('=== TESTANDO CONEXÃO COM A API ===');
-      const url = `${API_BASE_URL}/health`;
+      const url = `${API_BASE_URL}${API_ENDPOINTS.HEALTH_CHECK}`;
       const headers = await getAuthHeaders();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
@@ -147,7 +188,7 @@ export const audioService = {
           throw new Error(`API não está respondendo corretamente: ${response.status}`);
         }
 
-        await response.json();
+        await response.json(); // Consumir a resposta JSON, mesmo que vazia
         return true;
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
@@ -162,12 +203,12 @@ export const audioService = {
   },
 
   /**
-   * Lista todos os áudios processados para o usuário autenticado.
+   * Lista todos os áudios para o usuário autenticado, incluindo seu status de processamento.
    * @returns Uma promessa que resolve para uma lista de AudioListItem.
    */
   async listAudios(): Promise<AudioListItem[]> {
     try {
-      const url = `${API_BASE_URL}/audios/list`;
+      const url = `${API_BASE_URL}${API_ENDPOINTS.LIST_AUDIOS}`;
       const headers = await getAuthHeaders();
       const response = await fetch(url, { method: 'GET', headers });
 
@@ -184,13 +225,19 @@ export const audioService = {
   },
 
   /**
-   * Deleta um áudio processado do servidor.
+   * Deleta um áudio do servidor.
    * @param sessionId O ID da sessão do áudio a ser deletado.
    * @returns Resposta da API.
    */
   async deleteAudio(sessionId: string): Promise<any> {
     try {
-      const url = `${API_BASE_URL}/audio/${sessionId}`; // O endpoint DELETE usa o mesmo caminho do GET
+      // Adição de validação para garantir que session_id não está vazio
+      if (!sessionId) {
+        console.warn('Tentativa de deletar áudio sem session_id fornecido.');
+        throw new Error('Session ID é necessário para deletar o áudio.');
+      }
+
+      const url = `${API_BASE_URL}${API_ENDPOINTS.DELETE_AUDIO}/${sessionId}`;
       const headers = await getAuthHeaders();
       const response = await fetch(url, { method: 'DELETE', headers });
 

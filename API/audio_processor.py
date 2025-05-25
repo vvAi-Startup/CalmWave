@@ -1,212 +1,146 @@
 import os
-import logging
 import subprocess
+import logging
 import shutil
-from typing import Dict, List, Optional
+import uuid
 
-# Configuração do logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class AudioProcessor:
-    """
-    Classe responsável pelo processamento de áudio final.
+    def __init__(self):
+        self.upload_folder = os.path.join( "uploads") # For initial M4A uploads
+        self.temp_wav_folder = os.path.join("temp_wavs") # For WAVs converted from M4A
+        # CORRECTED: Ensure processed_output_folder is also under base_dir for consistency
+        self.processed_output_folder = os.path.join("processed") # For WAVs received from clear_audio
 
-    Atributos:
-        upload_folder (str): Diretório para uploads temporários do áudio final M4A.
-        processed_folder (str): Diretório para arquivos processados (WAV).
-        session_data (Dict): Dados das sessões ativas (armazena apenas o caminho do áudio final M4A).
-    """
+        # Create directories if they don't exist
+        os.makedirs(self.upload_folder, exist_ok=True)
+        os.makedirs(self.temp_wav_folder, exist_ok=True)
+        os.makedirs(self.processed_output_folder, exist_ok=True)
 
-    def __init__(self, upload_folder: str = 'uploads', processed_folder: str = 'processed'):
+        self.session_data = {} # Stores temporary session-related file paths (in-memory cache)
+
+    def save_final_audio(self, audio_data, session_id, filename="audio.m4a"):
         """
-        Inicializa o processador de áudio.
-
-        Args:
-            upload_folder: Diretório para uploads temporários do M4A final.
-            processed_folder: Diretório para arquivos WAV processados.
+        Saves the final uploaded audio (M4A) to the upload folder.
         """
-        self.upload_folder = upload_folder
-        self.processed_folder = processed_folder
-        self.session_data = {}
+        session_upload_dir = os.path.join(self.upload_folder, session_id)
+        os.makedirs(session_upload_dir, exist_ok=True)
+        
+        # Ensure filename has .m4a extension
+        if not filename.lower().endswith('.m4a'):
+            filename = f"{os.path.splitext(filename)[0]}.m4a"
 
-        # Criar diretórios se não existirem
-        os.makedirs(upload_folder, exist_ok=True)
-        os.makedirs(processed_folder, exist_ok=True)
-        logger.info(f"Diretórios de áudio inicializados: uploads='{upload_folder}', processed='{processed_folder}'")
-
-    def save_final_audio(self, audio_data: bytes, session_id: str, filename: str = 'final_audio.m4a') -> str:
-        """
-        Salva o arquivo de áudio final M4A para uma sessão.
-
-        Args:
-            audio_data: Dados do áudio em bytes.
-            session_id: ID da sessão.
-            filename: Nome do arquivo (padrão 'final_audio.m4a').
-
-        Returns:
-            str: Caminho completo do arquivo M4A salvo.
-        """
+        m4a_path = os.path.join(session_upload_dir, filename)
         try:
-            session_dir = os.path.join(self.upload_folder, session_id)
-            os.makedirs(session_dir, exist_ok=True)
-
-            # Garante que o nome do arquivo tenha a extensão .m4a
-            if not filename.endswith('.m4a'):
-                filename = os.path.splitext(filename)[0] + '.m4a'
-            
-            final_m4a_file_path = os.path.join(session_dir, filename)
-
-            with open(final_m4a_file_path, 'wb') as f:
+            with open(m4a_path, 'wb') as f:
                 f.write(audio_data)
-            logger.info(f"Áudio final M4A salvo para sessão {session_id} em: {final_m4a_file_path}")
-
-            # Armazenar o caminho do arquivo M4A final na sessão em memória
-            self.session_data[session_id] = {
-                'final_m4a_path': final_m4a_file_path,
-                'status': 'uploaded'
-            }
-
-            return final_m4a_file_path
-
+            # Store initial path and status in in-memory session data
+            self.session_data[session_id] = {'final_m4a_path': m4a_path, 'status': 'uploaded'}
+            logger.info(f"Final M4A audio saved for session {session_id} at: {m4a_path}")
+            return m4a_path
         except Exception as e:
-            logger.error(f"Erro ao salvar o áudio final para sessão {session_id}: {str(e)}", exc_info=True)
+            logger.error(f"Error saving final M4A audio for session {session_id}: {e}", exc_info=True)
             raise
 
-    def convert_m4a_to_wav(self, input_path: str, output_path: str) -> None:
+    def process_session(self, session_id):
         """
-        Converte um arquivo M4A para WAV usando FFmpeg.
+        Converts the M4A audio of a session to WAV format.
+        The WAV file is saved in the temp_wav_folder.
+        """
+        if session_id not in self.session_data or 'final_m4a_path' not in self.session_data[session_id]:
+            logger.error(f"No M4A audio found in session_data for processing session {session_id}.")
+            return {"status": "error", "message": "No M4A audio found for this session to process."}
 
-        Args:
-            input_path: Caminho do arquivo M4A de entrada.
-            output_path: Caminho do arquivo WAV de saída.
-        """
+        m4a_path = self.session_data[session_id]['final_m4a_path']
+        
+        # Define output WAV path in the new temp_wav_folder
+        wav_filename = f"converted_{session_id}.wav"
+        wav_path = os.path.join(self.temp_wav_folder, wav_filename)
+
         try:
-            # Comando para converter o arquivo M4A para WAV
-            # -y para sobrescrever o arquivo de saída se existir
-            command = ['ffmpeg', '-y', '-i', input_path, output_path]
-            logger.info(f"Executando comando de conversão M4A para WAV: {' '.join(command)}")
+            # Use ffmpeg to convert M4A to WAV
+            command = [
+                'ffmpeg',
+                '-i', m4a_path,
+                '-acodec', 'pcm_s16le', # PCM signed 16-bit little-endian
+                '-ar', '44100',         # 44.1 kHz sample rate
+                '-ac', '1',             # Mono audio
+                wav_path
+            ]
+            subprocess.run(command, check=True, capture_output=True)
             
-            result = subprocess.run(command, check=True, capture_output=True, text=True)
-            logger.info(f"FFmpeg stdout (M4A to WAV): {result.stdout}")
-            logger.info(f"FFmpeg stderr (M4A to WAV): {result.stderr}")
-            logger.info(f"Arquivo convertido com sucesso para {output_path}")
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Erro ao converter M4A para WAV. Comando: {' '.join(e.cmd)}")
-            logger.error(f"FFmpeg stdout: {e.stdout}")
-            logger.error(f"FFmpeg stderr: {e.stderr}")
-            raise Exception(f"Falha na conversão M4A para WAV: {e.stderr}")
-        except FileNotFoundError:
-            logger.error("FFmpeg não encontrado. Certifique-se de que está instalado e no PATH.")
-            raise FileNotFoundError("FFmpeg não encontrado. Por favor, instale-o e adicione-o ao seu PATH.")
-        except Exception as e:
-            logger.error(f"Erro inesperado ao converter M4A para WAV: {str(e)}", exc_info=True)
-            raise
-
-    def process_session(self, session_id: str) -> Dict[str, str]:
-        """
-        Processa o áudio final de uma sessão, convertendo-o de M4A para WAV.
-
-        Args:
-            session_id: ID da sessão.
-
-        Returns:
-            Dict[str, str]: Resultado do processamento, incluindo o caminho do arquivo WAV.
-        """
-        try:
-            if session_id not in self.session_data:
-                logger.error(f"Sessão {session_id} não encontrada para processamento.")
-                return {
-                    'status': 'error',
-                    'message': 'Sessão não encontrada ou áudio não foi salvo.'
-                }
-
-            final_m4a_path = self.session_data[session_id].get('final_m4a_path')
-            if not final_m4a_path or not os.path.exists(final_m4a_path):
-                logger.error(f"Caminho do áudio final M4A não encontrado ou arquivo ausente para sessão {session_id}.")
-                return {
-                    'status': 'error',
-                    'message': 'Caminho do áudio final M4A não encontrado ou arquivo ausente.'
-                }
-
-            # Converter o arquivo M4A final para WAV
-            final_wav_output_path = os.path.join(self.processed_folder, f'final_processed_{session_id}.wav')
-            self.convert_m4a_to_wav(final_m4a_path, final_wav_output_path)
-
+            self.session_data[session_id]['processed_wav_path'] = wav_path
             self.session_data[session_id]['status'] = 'processed'
-            self.session_data[session_id]['output_path'] = final_wav_output_path
-
-            logger.info(f"Sessão {session_id} processada com sucesso. WAV em: {final_wav_output_path}")
-            return {
-                'status': 'success',
-                'message': 'Áudio processado com sucesso',
-                'output_path': final_wav_output_path
-            }
-
+            logger.info(f"Audio for session {session_id} converted to WAV at: {wav_path}")
+            return {"status": "success", "output_path": wav_path}
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg conversion error for session {session_id}: {e.stderr.decode()}", exc_info=True)
+            return {"status": "error", "message": f"FFmpeg conversion failed: {e.stderr.decode()}"}
         except Exception as e:
-            logger.error(f"Erro ao processar sessão {session_id}: {str(e)}", exc_info=True)
-            return {
-                'status': 'error',
-                'message': f"Erro no processamento da sessão: {str(e)}"
-            }
+            logger.error(f"Unexpected error during audio processing for session {session_id}: {e}", exc_info=True)
+            return {"status": "error", "message": f"Internal processing error: {e}"}
 
-    def get_session_status(self, session_id: str) -> Dict[str, str]:
+    def cleanup(self, session_id, cleanup_m4a=False, cleanup_temp_wav=False):
         """
-        Obtém o status de uma sessão.
+        Cleans up temporary files for a given session based on flags.
+        Does NOT remove session data from in-memory cache.
         """
+        # Clean up M4A upload directory
+        if cleanup_m4a:
+            m4a_dir = os.path.join(self.upload_folder, session_id)
+            if os.path.exists(m4a_dir):
+                try:
+                    shutil.rmtree(m4a_dir)
+                    logger.info(f"Cleaned up M4A upload directory for session {session_id}: {m4a_dir}")
+                except OSError as e:
+                    logger.warning(f"Could not remove M4A upload directory {m4a_dir}: {e}")
+            else:
+                logger.debug(f"M4A upload directory not found for session {session_id}: {m4a_dir}")
+
+        # Clean up temporary WAV file
+        if cleanup_temp_wav:
+            # Get the path from session_data if available, or construct it
+            temp_wav_file = self.session_data.get(session_id, {}).get('processed_wav_path')
+            if not temp_wav_file:
+                # Fallback: construct path if not in session_data (e.g., if app restarted)
+                temp_wav_file = os.path.join(self.temp_wav_folder, f"converted_{session_id}.wav")
+
+            if os.path.exists(temp_wav_file):
+                try:
+                    os.remove(temp_wav_file)
+                    logger.info(f"Cleaned up temporary WAV file for session {session_id}: {temp_wav_file}")
+                except OSError as e:
+                    logger.warning(f"Could not remove temporary WAV file {temp_wav_file}: {e}")
+            else:
+                logger.debug(f"Temporary WAV file not found for session {session_id}: {temp_wav_file}")
+    
+    def remove_session_data(self, session_id):
+        """
+        Removes session-specific data from the in-memory cache.
+        This should be called when the session's processing is fully complete
+        and its data is persisted in the database.
+        """
+        if session_id in self.session_data:
+            del self.session_data[session_id]
+            logger.info(f"Session data for {session_id} removed from in-memory cache.")
+        else:
+            logger.debug(f"No session data found for {session_id} to remove from in-memory cache.")
+
+    def save_processed_audio_from_external(self, audio_data, filename):
+        """
+        Saves an audio file received from an external microservice (e.g., denoised audio).
+        This file is saved directly into the processed_output_folder.
+        """
+        # Ensure the processed_output_folder exists
+        os.makedirs(self.processed_output_folder, exist_ok=True)
+        
+        save_path = os.path.join(self.processed_output_folder, filename)
         try:
-            if session_id not in self.session_data:
-                return {
-                    'status': 'not_found',
-                    'message': 'Sessão não encontrada'
-                }
-
-            session_info = self.session_data[session_id]
-            return {
-                'status': 'success',
-                'session_status': session_info.get('status', 'unknown'),
-                'output_path': session_info.get('output_path', 'N/A')
-            }
-
+            with open(save_path, 'wb') as f:
+                f.write(audio_data)
+            logger.info(f"External processed audio saved to: {save_path}")
+            return save_path
         except Exception as e:
-            logger.error(f"Erro ao obter status da sessão {session_id}: {str(e)}", exc_info=True)
-            return {
-                'status': 'error',
-                'message': str(e)
-            }
-
-    def get_session_final_audio_path(self, session_id: str) -> Optional[str]:
-        """
-        Obtém o caminho do arquivo M4A final de uma sessão.
-        """
-        try:
-            return self.session_data.get(session_id, {}).get('final_m4a_path')
-        except Exception as e:
-            logger.error(f"Erro ao obter caminho do áudio final para sessão {session_id}: {str(e)}", exc_info=True)
-            return None
-
-    def cleanup(self, session_id: str) -> None:
-        """
-        Limpa os recursos temporários de uma sessão.
-        O arquivo WAV final processado NÃO será removido.
-        """
-        try:
-            # Remover diretório da sessão de uploads (onde o M4A final está)
-            session_upload_dir = os.path.join(self.upload_folder, session_id)
-            if os.path.exists(session_upload_dir):
-                shutil.rmtree(session_upload_dir)
-                logger.info(f"Diretório de upload da sessão {session_id} removido (inclui M4A final).")
-
-            # O arquivo WAV final (final_processed_{session_id}.wav) permanece na pasta 'processed'.
-
-            # Remover dados da sessão da memória
-            if session_id in self.session_data:
-                del self.session_data[session_id]
-                logger.info(f"Dados da sessão {session_id} removidos da memória.")
-
-            logger.info(f"Recursos temporários da sessão {session_id} limpos com sucesso. Arquivo WAV final mantido.")
-
-        except Exception as e:
-            logger.error(f"Erro ao limpar recursos da sessão {session_id}: {str(e)}", exc_info=True)
-            # Não levantar exceção para que a limpeza não interrompa o fluxo principal
+            logger.error(f"Error saving external processed audio to {save_path}: {e}", exc_info=True)
+            raise

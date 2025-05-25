@@ -10,8 +10,10 @@ services:
       - FLASK_APP=app.py
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
-      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_URI=mongodb://mongo:27017 # Acessível pelo nome do serviço Docker 'mongo'
       - SECRET_KEY=calmwavesecret
+      - DENOISE_SERVICE_URL=http://10.67.57.148:8000/audio/denoise # <--- PONTO CRÍTICO: URL do serviço de Denoising
+      - API_BASE_URL_FOR_FRONTEND=http://10.67.57.147:5000 # <--- NOVO: Base URL que o frontend deve usar para o Flask
     volumes:
       - ./uploads:/app/uploads
       - ./processed:/app/processed
