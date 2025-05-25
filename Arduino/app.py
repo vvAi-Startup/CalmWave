@@ -182,7 +182,10 @@ def arduino_serial_reader_thread_func():
                                 try:
                                     with open(AUDIO_FILENAME, 'rb') as f:
                                         # Adicionado timeout para evitar bloqueio eterno
-                                        response = requests.post(API_URL, files={'file': f}, timeout=60) # 60 segundos de timeout
+                                        files = {
+                                            'audio': (AUDIO_FILENAME, f, 'audio/wav')
+                                        }
+                                        response = requests.post(API_URL, files=files, timeout=60) # 60 segundos de timeout
                                     print(f"PYTHON: API respondeu: {response.status_code} - {response.text}")
                                 except requests.exceptions.ConnectionError:
                                     print(f"PYTHON: Erro ao enviar para API: Nao foi possivel conectar ao servidor em {API_URL}. Certifique-se de que o servidor esta rodando.")
