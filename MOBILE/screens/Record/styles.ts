@@ -124,4 +124,43 @@ export const styles = StyleSheet.create({
     justifyContent:'space-between',
     marginTop:'40%'
   },
-})
+  processingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  processingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#000',
+  },
+  errorText: {
+    color: '#ff0000',
+    fontSize: 14,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  uploadingText: {
+    color: '#5319C6',
+    fontSize: 14,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  connectionText: {
+    color: '#9EBDC1',
+    fontSize: 14,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  successText: {
+    color: '#4CAF50',
+    fontSize: 14,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+});
