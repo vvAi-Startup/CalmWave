@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TouchableOpacity, Image, Alert, ActivityIndicator } from "react-native";
 import { styles } from "./styles"; // Assuming styles are defined here
@@ -16,6 +17,8 @@ export default function RecordScreen() {
   const [audioUri, setAudioUri] = useState<string | null>(null); // URI local do M4A gravado
   const [timer, setTimer] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false); // Para processamento no backend (conversão e denoising)
+  const [isServerConnected, setIsServerConnected] = useState(false);
+  const [isBluetoothConnected, setIsBluetoothConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false); // Para upload do arquivo local para o backend
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -147,6 +150,7 @@ export default function RecordScreen() {
         playsInSilentModeIOS: true,
       });
 
+
       const newSessionId = `session_${Date.now()}`;
       // Cria uma nova instância de gravação (grava em M4A/AAC por padrão)
       const { recording: newRecording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
@@ -202,6 +206,7 @@ export default function RecordScreen() {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
+
       }
 
       await recording.stopAndUnloadAsync();
@@ -209,6 +214,7 @@ export default function RecordScreen() {
       setAudioUri(uri);
       setRecording(null);
       setIsRecording(false);
+
 
       if (uri && sessionId && sessionDirectory.current) {
         setIsProcessing(true); // Indica que o processamento no backend está começando
@@ -249,6 +255,7 @@ export default function RecordScreen() {
                 }
               }
             }
+
           ]);
         } catch (error) {
           console.error('Erro no processamento, upload ou download:', error);
@@ -319,17 +326,34 @@ export default function RecordScreen() {
             </View>
           </View>
         </TouchableOpacity>
-        {isRecording && <Text style={styles.timerText}>{formatTime(timer)}</Text>}
+             {isRecording && <Text style={styles.timerText}>{formatTime(timer)}</Text>}
         {isProcessing && (
           <View style={styles.processingContainer}>
             <ActivityIndicator size="large" color="#0000ff" />
             <Text style={styles.processingText}>Processando áudio...</Text>
           </View>
+            )}
+
+      <View style={styles.statusIconsContainer}>
+        {isServerConnected ? (
+          <Wave_verde width={36} height={36} />
+        ) : (
+          <Wave width={36} height={36} />
         )}
-        {uploadError && <Text style={styles.errorText}>{uploadError}</Text>}
+        <TouchableOpacity onPress={configuration}>
+          {isBluetoothConnected ? (
+            <Bluetooth_verde width={36} height={36} />
+          ) : (
+            <Bluetooth width={36} height={36} />
+          )}
+        </TouchableOpacity>
+          {uploadError && <Text style={styles.errorText}>{uploadError}</Text>}
         {isUploading && <Text style={styles.uploadingText}>Enviando áudio...</Text>}
       </View>
+
       <Nav />
     </View>
   );
 }
+
+export default RecordScreen
