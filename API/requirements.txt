@@ -10,3 +10,4 @@ flask-pymongo
 python-dotenv
 pydub
 soundfile
+flask_jwt_extended
