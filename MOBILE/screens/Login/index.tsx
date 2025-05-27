@@ -24,41 +24,43 @@ export default function LoginScreen() {
   const navigation = useNavigation<NavigationProp>();
 
   const handleLogin = async () => {
-    if (!email || !senha) {
-      alert("Preencha todos os campos.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password: senha,
-        }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        try {
-          await AsyncStorage.setItem("@CalmWave:token", data.token);
-          alert("Login realizado com sucesso.");
-          navigation.navigate("Record");
-        } catch (error) {
-          alert("Erro ao salvar o token de autenticação."); // Alerta específico para erro ao salvar
-        }
-      } else if (response.status === 401) {
-        alert("Credenciais inválidas.");
-      } else {
-        alert(data.message || "Erro ao realizar login.");
-      }
-    } catch (error) {
-      alert("Ocorreu um erro ao fazer login.");
-    } finally {
-      setLoading(false);
-    }
+    // if (!email || !senha) {
+    //   alert("Preencha todos os campos.");
+    //   return;
+    // }
+    // setLoading(true);
+    // try {
+    //   const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    //     method: "POST",
+    //     headers: {
+    //       "Content-Type": "application/json",
+    //     },
+    //     body: JSON.stringify({
+    //       email,
+    //       password: senha,
+    //     }),
+    //   });
+    //   const data = await response.json();
+    //   if (response.ok) {
+    //     try {
+    //       await AsyncStorage.setItem("@CalmWave:token", data.token);
+    //       alert("Login realizado com sucesso.");
+    //       navigation.navigate("Record");
+    //     } catch (error) {
+    //       alert("Erro ao salvar o token de autenticação."); // Alerta específico para erro ao salvar
+    //     }
+    //   } else if (response.status === 401) {
+    //     alert("Credenciais inválidas.");
+    //   } else {
+    //     alert(data.message || "Erro ao realizar login.");
+    //   }
+    // } catch (error) {
+    //   alert("Ocorreu um erro ao fazer login.");
+    // } finally {
+    //   setLoading(false);
+    // }
+    navigation.navigate("Record");
+
   };
 
   return (

@@ -1,3 +1,4 @@
+
 import { StyleSheet } from "react-native";
 
 export const styles = StyleSheet.create({
@@ -8,22 +9,10 @@ export const styles = StyleSheet.create({
     alignItems: "center",
   },
   topContainer: {
-    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "center", 
     marginBottom: 30,
     marginTop: 50,
-    width: "100%", 
-    position: "relative", 
-  },
-  menuContainer: {
-    position: "absolute", 
-    left: 25,
-    top:0,
-  },
-  textContainer: {
-    justifyContent: "center",
-    alignItems: "center", 
   },
   title: {
     fontFamily: "Azonix",
@@ -107,22 +96,10 @@ export const styles = StyleSheet.create({
     borderRadius: 2,
   },
   timerText: {
-    marginTop: 50,
-    fontSize: 32,
-    backgroundColor: "#222",
-    color: "#fff",
+    fontSize: 24,
     fontWeight: "bold",
-    textAlign: "center",
-    padding:10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#5319C6",
-  },
-  statusIconsContainer: {
-    width:'90%',
-    flexDirection: 'row',
-    justifyContent:'space-between',
-    marginTop:'40%'
+    color: "#FFF",
+    marginTop: 10,
   },
   processingContainer: {
     position: 'absolute',

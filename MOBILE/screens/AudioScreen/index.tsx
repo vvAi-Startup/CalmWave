@@ -115,7 +115,7 @@ export default function AudioListScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <AudioItem
-            title={item.title}
+            title={item.title || 'Áudio sem título'}
             isPlaying={selectedAudioId === item.id}
             onPlay={() => handlePlay(item.path, item.id)}
             onDelete={() => handleDelete(item.id, item.session_id)}
