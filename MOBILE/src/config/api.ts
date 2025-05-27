@@ -10,6 +10,8 @@ export const API_ENDPOINTS = {
   STREAM_AUDIO: '/stream',
   CLEANUP: '/cleanup',
   LIST_AUDIOS: '/audios/list',
+  HEALTH_CHECK: '/health',
+  DELETE_AUDIO: '/audios/delete',
 };
 
 // Configuração do timeout para requisições
@@ -18,5 +20,12 @@ export const API_TIMEOUT = 30000; // 30 segundos
 // Configuração dos headers padrão
 export const DEFAULT_HEADERS = {
   'Accept': 'application/json',
-  'Content-Type': 'multipart/form-data',
+  'Content-Type': 'application/json',
+};
+
+// Configuração de tipos de mídia aceitos
+export const ACCEPTED_AUDIO_TYPES = {
+  'audio/wav': '.wav',
+  'audio/m4a': '.m4a',
+  'audio/mpeg': '.mp3',
 }; 

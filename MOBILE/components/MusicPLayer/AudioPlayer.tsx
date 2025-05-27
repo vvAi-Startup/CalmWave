@@ -39,6 +39,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, visible, onClose 
 
       if (!uri) {
         console.error('URI do áudio não fornecida');
+        Alert.alert('Erro', 'URL do áudio não fornecida');
         return;
       }
 
@@ -54,12 +55,27 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, visible, onClose 
         onPlaybackStatusUpdate
       );
 
+      if (!newSound) {
+        throw new Error('Falha ao criar objeto de áudio');
+      }
+
       setSound(newSound);
       setIsPlaying('isLoaded' in status && status.isLoaded ? status.isPlaying : false);
       setDuration('isLoaded' in status && status.isLoaded && status.durationMillis ? status.durationMillis : 1);
     } catch (error) {
       console.error('Erro ao carregar áudio:', error);
-      Alert.alert('Erro', 'Não foi possível carregar o áudio. Por favor, tente novamente.');
+      Alert.alert(
+        'Erro',
+        'Não foi possível carregar o áudio. Por favor, tente novamente.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              if (onClose) onClose();
+            }
+          }
+        ]
+      );
     }
   };
 
@@ -82,6 +98,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, visible, onClose 
       if (status.didJustFinish) {
         setPosition(0);
         setIsPlaying(false);
+      }
+
+      // Se houver erro na reprodução
+      if (status.error) {
+        console.error('Erro na reprodução:', status.error);
+        Alert.alert('Erro', 'Ocorreu um erro durante a reprodução do áudio');
+        if (onClose) onClose();
       }
     }
   };

@@ -226,18 +226,27 @@ export const audioService = {
         }
 
         const data = await response.json();
+        console.log('Resposta da API:', data); // Log para depuração
+
         if (!data.data || !Array.isArray(data.data)) {
+          console.log('Nenhum dado retornado ou formato inválido');
           return [];
         }
 
-        return data.data.map((audio: any) => ({
-          id: audio.id,
-          session_id: audio.id, // Usando o mesmo ID como session_id
-          title: audio.filename || 'Áudio sem título',
-          path: `${API_BASE_URL}/processed/${audio.filename}`, // Corrigindo o path para incluir o diretório processed
-          created_at: audio.created_at,
-          status: 'processed' // Assumindo que todos os áudios listados já estão processados
-        }));
+        return data.data.map((audio: any) => {
+          const audioUrl = audio.path.startsWith('http') 
+            ? audio.path 
+            : `${API_BASE_URL}${audio.path}`;
+
+          return {
+            id: audio.id,
+            session_id: audio.id,
+            title: audio.title || audio.filename || 'Áudio sem título',
+            path: audioUrl,
+            created_at: audio.created_at,
+            status: 'processed'
+          };
+        });
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           throw new Error('Timeout ao listar áudios');

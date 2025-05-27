@@ -369,11 +369,12 @@ def list_audios_simplified():
         processed_dir = os.path.join(os.getcwd(), 'processed')
         
         if not os.path.exists(processed_dir):
+            os.makedirs(processed_dir)
             return jsonify({
-                "status": "error",
-                "message": "Nenhum áudio encontrado",
+                "status": "success",
+                "message": "Diretório de áudios criado",
                 "data": []
-            }), 404
+            }), 200
 
         audio_files = []
         for filename in os.listdir(processed_dir):
@@ -385,19 +386,13 @@ def list_audios_simplified():
                     "filename": filename,
                     "path": f"/processed/{filename}",
                     "size": file_stats.st_size,
-                    "created_at": file_stats.st_ctime
+                    "created_at": file_stats.st_ctime,
+                    "title": filename.replace('.wav', '').replace('.m4a', '')
                 })
-
-        if not audio_files:
-            return jsonify({
-                "status": "success",
-                "message": "Nenhum áudio encontrado",
-                "data": []
-            }), 200
 
         return jsonify({
             "status": "success",
-            "message": "Áudios listados com sucesso",
+            "message": "Áudios listados com sucesso" if audio_files else "Nenhum áudio encontrado",
             "data": audio_files
         }), 200
 
