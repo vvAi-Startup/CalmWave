@@ -210,14 +210,40 @@ export const audioService = {
     try {
       const url = `${API_BASE_URL}${API_ENDPOINTS.LIST_AUDIOS}`;
       const headers = await getAuthHeaders();
-      const response = await fetch(url, { method: 'GET', headers });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Erro ao listar áudios: ${response.status} - ${errorText}`);
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          throw new Error(`Erro ao listar áudios: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (!data.data || !Array.isArray(data.data)) {
+          return [];
+        }
+
+        return data.data.map((audio: any) => ({
+          id: audio.id,
+          session_id: audio.id, // Usando o mesmo ID como session_id
+          title: audio.filename || 'Áudio sem título',
+          path: `${API_BASE_URL}/processed/${audio.filename}`, // Corrigindo o path para incluir o diretório processed
+          created_at: audio.created_at,
+          status: 'processed' // Assumindo que todos os áudios listados já estão processados
+        }));
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error('Timeout ao listar áudios');
+        }
+        throw error;
       }
-
-      return await response.json(); // Retorna a lista de AudioListItem
     } catch (error) {
       console.error('Erro ao listar áudios:', error);
       throw error;

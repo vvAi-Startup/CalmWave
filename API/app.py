@@ -361,53 +361,54 @@ def clear_audio():
 @app.route('/audios/list', methods=['GET'])
 def list_audios_simplified():
     """
-    SIMPLIFIED: Endpoint to list all audio records from the database.
-    Only shows basic info like upload_id, filename, status, and direct path (if available).
-    No complex title generation or user-specific filtering.
+    Endpoint simplificado para listar áudios.
+    Retorna uma lista de áudios processados com informações básicas.
     """
     try:
-        logger.info("Requisição /audios/list (simplificada) recebida.")
- 
-        all_audios = audios_collection.find().sort("created_at", -1) 
- 
-        audio_list = []
-        for audio_doc in all_audios:
-            # Safely get fields, provide defaults if missing
-            upload_id = audio_doc.get("upload_id", "N/A")
-            original_filename = audio_doc.get("original_filename", "unknown_file")
-            status = audio_doc.get("status", "unknown")
-            message = audio_doc.get("message", "")
-            final_denoised_url = audio_doc.get("final_denoised_url")
-            
-            # Use final_denoised_url if available, otherwise just use the filename
-            # You might want a dedicated endpoint to serve these if final_denoised_url is internal path
-            display_path = final_denoised_url if final_denoised_url else f"/processed/{original_filename}"
- 
-            # Format creation time if available
-            created_at_timestamp = audio_doc.get('created_at')
-            formatted_date = ""
-            if created_at_timestamp:
-                try:
-                    formatted_date = time.strftime('%d/%m/%Y %H:%M:%S', time.localtime(created_at_timestamp))
-                except (TypeError, ValueError):
-                    formatted_date = "Invalid Date"
-            
-            audio_list.append({
-                "id": str(audio_doc["_id"]),
-                "upload_id": upload_id,
-                "filename": original_filename,
-                "status": status,
-                "message": message,
-                "created_at": formatted_date,
-                "audio_url": display_path # Simplified path
-            })
+        # Define o diretório padrão como 'processed'
+        processed_dir = os.path.join(os.getcwd(), 'processed')
         
-        logger.info(f"Retornando {len(audio_list)} áudios simplificados.")
-        return jsonify(audio_list), 200
- 
+        if not os.path.exists(processed_dir):
+            return jsonify({
+                "status": "error",
+                "message": "Nenhum áudio encontrado",
+                "data": []
+            }), 404
+
+        audio_files = []
+        for filename in os.listdir(processed_dir):
+            if filename.endswith(('.wav', '.m4a')):
+                file_path = os.path.join(processed_dir, filename)
+                file_stats = os.stat(file_path)
+                audio_files.append({
+                    "id": str(uuid.uuid4()),
+                    "filename": filename,
+                    "path": f"/processed/{filename}",
+                    "size": file_stats.st_size,
+                    "created_at": file_stats.st_ctime
+                })
+
+        if not audio_files:
+            return jsonify({
+                "status": "success",
+                "message": "Nenhum áudio encontrado",
+                "data": []
+            }), 200
+
+        return jsonify({
+            "status": "success",
+            "message": "Áudios listados com sucesso",
+            "data": audio_files
+        }), 200
+
     except Exception as e:
-        logger.error(f"Erro ao listar áudios (simplificado): {str(e)}", exc_info=True)
-        return jsonify({'error': f"Erro interno do servidor: {str(e)}"}), 500
+        logger.error(f"Erro ao listar áudios: {str(e)}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": "Erro ao listar áudios",
+            "error": str(e),
+            "data": []
+        }), 500
  
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -32,22 +32,35 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, visible, onClose 
   }, [uri, visible]);
 
   const loadSound = async () => {
-    if (sound) {
-      await sound.unloadAsync();
-    }
-    const { sound: newSound, status } = await Audio.Sound.createAsync(
-      { uri },
-      {
-        shouldPlay: true,
-        rate: speeds[speedIndex],
-        shouldCorrectPitch: true,
-        pitchCorrectionQuality: Audio.PitchCorrectionQuality.High,
+    try {
+      if (sound) {
+        await sound.unloadAsync();
       }
-    );
-    setSound(newSound);
-    setIsPlaying('isLoaded' in status && status.isLoaded ? status.isPlaying : false);
-    setDuration('isLoaded' in status && status.isLoaded && status.durationMillis ? status.durationMillis : 1);
-    newSound.setOnPlaybackStatusUpdate(onPlaybackStatusUpdate);
+
+      if (!uri) {
+        console.error('URI do áudio não fornecida');
+        return;
+      }
+
+      console.log('Carregando áudio:', uri);
+      const { sound: newSound, status } = await Audio.Sound.createAsync(
+        { uri },
+        {
+          shouldPlay: true,
+          rate: speeds[speedIndex],
+          shouldCorrectPitch: true,
+          pitchCorrectionQuality: Audio.PitchCorrectionQuality.High,
+        },
+        onPlaybackStatusUpdate
+      );
+
+      setSound(newSound);
+      setIsPlaying('isLoaded' in status && status.isLoaded ? status.isPlaying : false);
+      setDuration('isLoaded' in status && status.isLoaded && status.durationMillis ? status.durationMillis : 1);
+    } catch (error) {
+      console.error('Erro ao carregar áudio:', error);
+      Alert.alert('Erro', 'Não foi possível carregar o áudio. Por favor, tente novamente.');
+    }
   };
 
   const unloadSound = async () => {
@@ -58,10 +71,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, visible, onClose 
   };
 
   const onPlaybackStatusUpdate = (status: any) => {
+    if (!isMounted.current) return;
+
     if ('isLoaded' in status && status.isLoaded) {
       setPosition(status.positionMillis);
       setDuration(status.durationMillis || 1);
       setIsPlaying(status.isPlaying);
+
+      // Se o áudio terminar de tocar, resetar o player
+      if (status.didJustFinish) {
+        setPosition(0);
+        setIsPlaying(false);
+      }
     }
   };
 
