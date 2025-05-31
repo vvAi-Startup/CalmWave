@@ -13,10 +13,16 @@ services:
       - MONGO_URI=mongodb://mongo:27017 # Acessível pelo nome do serviço Docker 'mongo'
       - SECRET_KEY=calmwavesecret
       - DENOISE_SERVICE_URL=http://10.67.57.148:8000/audio/denoise # <--- PONTO CRÍTICO: URL do serviço de Denoising
-      - API_BASE_URL_FOR_FRONTEND=http://10.67.57.147:5000 # <--- NOVO: Base URL que o frontend deve usar para o Flask
+      - BASE_URL=http://10.67.57.147:5000 # <--- RENOMEADO: Agora BASE_URL para consistência com o código Flask
+      - UPLOAD_FOLDER=/app/uploads       # Adicionado para ser explicitamente configurado
+      - TEMP_WAV_FOLDER=/app/temp_wavs   # Adicionado para ser explicitamente configurado
+      - PROCESSED_FOLDER=/app/processed  # Adicionado para ser explicitamente configurado
     volumes:
       - ./uploads:/app/uploads
       - ./processed:/app/processed
+      # Não adicionamos um volume para ./temp_wavs, pois são arquivos temporários
+      # e geralmente não precisamos persistí-los no host. Eles serão criados
+      # e limpos dentro do contêiner pelo AudioProcessor.
     networks:
       - backend
 
