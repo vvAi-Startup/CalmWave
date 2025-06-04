@@ -13,6 +13,8 @@ services:
       - MONGO_URI=mongodb://mongo:27017 # Acessível pelo nome do serviço Docker 'mongo'
       - SECRET_KEY=calmwavesecret
       - DENOISE_SERVICE_URL=http://10.67.57.148:8000/audio/denoise # <--- PONTO CRÍTICO: URL do serviço de Denoising
+      - SECRET_KEY=calmwavesecret # Considere mover para um .env file ou secrets do Docker
+      - DENOISE_SERVER=http://10.67.57.148:8000/audio/denoise # <--- CORRIGIDO: Nome da variável para corresponder à config.py
       - BASE_URL=http://10.67.57.147:5000 # <--- RENOMEADO: Agora BASE_URL para consistência com o código Flask
       - UPLOAD_FOLDER=/app/uploads       # Adicionado para ser explicitamente configurado
       - TEMP_WAV_FOLDER=/app/temp_wavs   # Adicionado para ser explicitamente configurado
