@@ -12,4 +12,8 @@ pydub
 pymongo
 soundfile
 flask_jwt_extended
-marshmallow 
+marshmallow
+flask-limiter
+redis
+gunicorn
+python-magic
