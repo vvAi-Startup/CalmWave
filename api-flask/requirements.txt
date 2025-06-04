@@ -9,6 +9,7 @@ PyJWT
 flask-pymongo 
 python-dotenv
 pydub
+pymongo
 soundfile
 flask_jwt_extended
 marshmallow 

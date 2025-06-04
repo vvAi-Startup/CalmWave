@@ -8,3 +8,4 @@ class Config:
     TEMP_WAV_FOLDER = os.path.join(os.getcwd(), 'temp_wavs') # Caminho para WAV temporário
     PROCESSED_FOLDER = os.path.join(os.getcwd(), 'processed') # Caminho para áudio final processado
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+    BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:5000') # Adicionado BASE_URL

@@ -5,25 +5,27 @@ import sys
 import os
 
 from app.config import Config
-from app.extensions import init_mongo, logger
-from app.resources.audio_resource import audio_bp, register_resources as register_audio_resources
-from app.resources.auth_resource import auth_bp, register_auth_resources # Importe o blueprint e a função de registro
-from app.audio_processor import AudioProcessor # Certifique-se de que este é o seu arquivo atualizado
+# Import the extensions module to access its attributes after initialization
+import app.extensions as extensions_module # Alias to avoid conflict with app.extensions dict
+
+from app.resources.audio_resource import audio_bp
+from app.resources.auth_resource import auth_bp
+from app.services.audio_service import AudioService
+from app.services.auth_service import AuthService
+
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Configuração de logging
     logging.basicConfig(
         level=getattr(logging, app.config['LOG_LEVEL']),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[logging.StreamHandler(sys.stdout)]
     )
+    # The app.logger is Flask's default logger, configured by basicConfig.
+    # If you need the logger from app.extensions specifically, use app.extensions.logger.
 
-    # Configura CORS
     CORS(app, resources={
         r"/*": {
             "origins": "*",
@@ -32,51 +34,43 @@ def create_app():
         }
     })
 
-    # Configuração do Flask para melhor tratamento de erros
     app.config['JSON_AS_ASCII'] = False
     app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
     app.config['JSONIFY_MIMETYPE'] = 'application/json; charset=utf-8'
 
     @app.errorhandler(Exception)
     def handle_error(error):
-        """Handler global para erros não tratados"""
-        logger.error(f"Erro não tratado: {str(error)}", exc_info=True)
-        response = {
+        # Use Flask's app logger or app.extensions.logger
+        app.logger.error(f"Erro não tratado: {str(error)}", exc_info=True)
+        return jsonify({
             "status": "error",
             "message": "Erro interno do servidor",
             "error": str(error)
-        }
-        return jsonify(response), 500
+        }), 500
 
     @app.after_request
     def after_request(response):
-        """Adiciona headers de segurança e encoding"""
         response.headers.add('Content-Type', 'application/json; charset=utf-8')
         response.headers.add('X-Content-Type-Options', 'nosniff')
         response.headers.add('X-Frame-Options', 'DENY')
         return response
 
     with app.app_context():
-        # Inicializa o MongoDB (incluindo users_collection)
-        init_mongo(app)
-        
-        # Define a BASE_URL que será usada pelo service para construir URLs de download
-        # Note: request.url_root só está disponível dentro de um contexto de requisição.
-        # Para um valor inicial, você pode usar uma URL padrão ou definir de outra forma.
-        # Para este exemplo, vamos assumir que está ok para o momento da inicialização.
-        # Em produção, você pode querer definir isso via variável de ambiente ou outra configuração.
-        app.config['BASE_URL'] = os.getenv('BASE_URL', 'http://127.0.0.1:5000') # Default fallback
+        extensions_module.init_mongo(app)  # Call init_mongo from the aliased module
 
-        # Crie os diretórios de áudio se não existirem
+        # Services are initialized with the db instance from the extensions module,
+        # which is now guaranteed to be set up by init_mongo.
+        app.audio_service = AudioService(extensions_module.db)
+        app.auth_service = AuthService(extensions_module.db)
+
+
+        #app.config['BASE_URL'] = os.getenv('BASE_URL', 'http://127.0.0.1:5000')
+
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
+        os.makedirs(app.config.get('TEMP_WAV_FOLDER', os.path.join(os.getcwd(), 'temp_wavs')), exist_ok=True)
 
-        # Registra os recursos (endpoints) de áudio
-        register_audio_resources(app)
         app.register_blueprint(audio_bp)
-
-        # Registra os recursos (endpoints) de autenticação
-        register_auth_resources(app) # Chama a função para inicializar e registrar o blueprint
-        app.register_blueprint(auth_bp) # Registra o blueprint de autenticação
+        app.register_blueprint(auth_bp)
 
     return app

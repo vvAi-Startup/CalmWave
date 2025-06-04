@@ -27,7 +27,7 @@ RUN mkdir -p uploads temp_wavs processed
 
 # Set environment variables for Flask and Python buffering
 ENV PYTHONUNBUFFERED=1 \
-    FLASK_APP=app.py \
+    FLASK_APP=run.py \
     FLASK_RUN_HOST=0.0.0.0 \
     FLASK_ENV=production
 
@@ -35,4 +35,4 @@ ENV PYTHONUNBUFFERED=1 \
 EXPOSE 5000
 
 # Command to run your Flask application
-CMD ["python", "app.py"]
+CMD ["python", "run.py"]

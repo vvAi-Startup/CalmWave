@@ -1,15 +1,18 @@
-from app.models.user_model import UserModel
-from app.schemas.user_schema import UserSchema, UserRegistrationSchema, UserLoginSchema, TokenSchema
-from app.extensions import logger
-from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from datetime import datetime, timedelta
-from flask import current_app # Para acessar app.config['SECRET_KEY']
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask import current_app # Importa current_app
+
+from app.models import UserModel
+from app.schemas.user_schema import UserSchema, UserRegistrationSchema, UserLoginSchema, TokenSchema
+from app.extensions import logger 
+
 
 class AuthService:
-    def __init__(self):
-        self.user_model = UserModel()
-        self.secret_key = current_app.config['SECRET_KEY']
+    def __init__(self, db_instance): # Parameter renamed for clarity, receives db instance
+        # self.app = db_instance # Storing db_instance as self.app can be misleading
+        self.user_model = UserModel(db_instance) # Pass db_instance directly to UserModel
+        self.secret_key = current_app.config['SECRET_KEY'] # Access config via current_app
 
     def generate_token(self, user_id):
         """
@@ -44,10 +47,10 @@ class AuthService:
             user_data = schema.load(data)
         except Exception as e:
             logger.error(f"Validation error during registration: {e.messages}")
-            return {"message": "Dados de registro inválidos", "errors": e.messages}, 400
+            return {"message": "Invalid registration data", "errors": e.messages}, 400
 
         if self.user_model.find_by_email(user_data['email']):
-            return {"message": "Email já está em uso"}, 400
+            return {"message": "Email is already in use"}, 400
 
         hashed_password = generate_password_hash(user_data['password'], method='pbkdf2:sha256')
         new_user_data = {
@@ -62,7 +65,7 @@ class AuthService:
         created_user = self.user_model.find_by_id(user_id)
         if not created_user:
             logger.error(f"Failed to retrieve created user with ID: {user_id}")
-            return {"message": "Erro ao criar usuário, tente novamente."}, 500
+            return {"message": "Error creating user, please try again."}, 500
 
         token = self.generate_token(user_id)
         
@@ -84,14 +87,14 @@ class AuthService:
             login_data = schema.load(data)
         except Exception as e:
             logger.error(f"Validation error during login: {e.messages}")
-            return {"message": "Dados de login inválidos", "errors": e.messages}, 400
+            return {"message": "Invalid login data", "errors": e.messages}, 400
 
         user = self.user_model.find_by_email(login_data['email'])
         if not user:
-            return {"message": "Usuário não encontrado"}, 404
+            return {"message": "User not found"}, 404
 
         if not check_password_hash(user['password'], login_data['password']):
-            return {"message": "Senha incorreta"}, 401
+            return {"message": "Incorrect password"}, 401
 
         token = self.generate_token(user['_id'])
         return TokenSchema().dump({
@@ -105,28 +108,28 @@ class AuthService:
 
     def get_user_from_token(self, token_header):
         """
-        Extracts user ID from Authorization header token.
+        Extracts the user ID from the token in the Authorization header.
         """
         if not token_header:
-            return None, "Token não fornecido"
+            return None, "Token not provided"
         
         # Assume token_header is "Bearer <token>"
         parts = token_header.split()
         if len(parts) == 2 and parts[0].lower() == 'bearer':
             token = parts[1]
         else:
-            return None, "Formato de token inválido"
+            return None, "Invalid token format"
 
         payload = self.verify_token(token)
         if not payload:
-            return None, "Token inválido ou expirado"
+            return None, "Invalid or expired token"
         
         user_id = payload.get('user_id')
         if not user_id:
-            return None, "ID de usuário não encontrado no token"
+            return None, "User ID not found in token"
         
         user = self.user_model.find_by_id(user_id)
         if not user:
-            return None, "Usuário associado ao token não encontrado"
+            return None, "User associated with token not found"
         
         return user, None
