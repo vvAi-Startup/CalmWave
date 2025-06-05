@@ -165,7 +165,7 @@ def list_audios():
 
         return jsonify({
             "status": "success",
-            "message": "Áudios listados com sucesso" if audio_files else "Nenhum áudio encontrado",
+            "message": "Áudios listados com sucesso" if audio_files else "Nenhum áudio encontrado teste",
             "data": audio_files
         }), status_code
 

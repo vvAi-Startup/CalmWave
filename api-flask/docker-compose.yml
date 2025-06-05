@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     build: .
@@ -17,7 +15,7 @@ services:
       - SECRET_KEY=dev-secret-key
       - MONGO_URI=mongodb://mongo:27017
       - MONGO_DATABASE=calmwave
-      - DENOISE_SERVER=http://localhost:8000
+      - DENOISE_SERVER=http://10.67.57.148:8000
       - DENOISE_TIMEOUT=300
       - BASE_URL=http://localhost:5000
     depends_on:
