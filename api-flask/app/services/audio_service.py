@@ -133,13 +133,17 @@ class AudioService:
             response.raise_for_status()
  
             try:
+                # Atualiza o status para denoise_sent
                 self.audio_model.update_one(
                     {"upload_id": upload_id},
                     {"$set": {
                         "status": "denoise_sent",
-                        "denoise_requested_at": datetime.utcnow()
+                        "denoise_requested_at": datetime.utcnow(),
+                        "last_updated_at": datetime.utcnow(),
+                        "message": "Arquivo enviado para processamento de denoising"
                     }}
                 )
+                logger.info(f"[{upload_id}] Status atualizado para denoise_sent")
             except Exception as e:
                 logger.error(f"Erro ao atualizar status para denoise_sent: {str(e)}")
            
@@ -227,6 +231,7 @@ class AudioService:
             file_storage.save(final_denoise_path)
  
             try:
+                # Atualiza o status para processed
                 self.audio_model.update_one(
                     {"upload_id": upload_id},
                     {"$set": {
@@ -234,9 +239,12 @@ class AudioService:
                         "final_denoise_path": final_denoise_path,
                         "status": "processed",
                         "processed_at": datetime.utcnow(),
-                        "processed_filename": unique_filename
+                        "processed_filename": unique_filename,
+                        "last_updated_at": datetime.utcnow(),
+                        "message": "Arquivo processado com sucesso"
                     }}
                 )
+                logger.info(f"[{upload_id}] Status atualizado para processed")
             except Exception as e:
                 logger.error(f"Erro ao atualizar metadados do callback: {str(e)}")
  
