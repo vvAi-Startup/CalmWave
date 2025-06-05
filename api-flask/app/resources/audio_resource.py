@@ -80,8 +80,7 @@ def upload_audio():
         return jsonify({
             "status": "success",
             "message": "Arquivo enviado para processamento",
-            "upload_id": upload_id,
-            "processed_audio_url": denoising_result['processed_audio_url']
+            "upload_id": upload_id
         }), 200
 
     except Exception as e:
@@ -157,17 +156,32 @@ def clear_audio():
 
 @audio_bp.route('/audios/list', methods=['GET'])
 def list_audios():
-    """Endpoint para listar áudios processados."""
+    """Endpoint para listar todos os áudios processados."""
     try:
         # Usa a instância do serviço de áudio do app
         audio_service = current_app.audio_service
-        audio_files, status_code = audio_service.get_audio_urls()
-
+        
+        # Lista todos os arquivos na pasta processed
+        processed_folder = current_app.config['PROCESSED_FOLDER']
+        audio_files = []
+        
+        if os.path.exists(processed_folder):
+            for filename in os.listdir(processed_folder):
+                if filename.endswith(('.wav', '.mp3', '.m4a')):
+                    file_path = os.path.join(processed_folder, filename)
+                    if os.path.isfile(file_path):
+                        audio_files.append({
+                            "filename": filename,
+                            "url": f"{request.url_root}processed/{filename}",
+                            "size": os.path.getsize(file_path),
+                            "created_at": os.path.getctime(file_path)
+                        })
+        
         return jsonify({
             "status": "success",
             "message": "Áudios listados com sucesso" if audio_files else "Nenhum áudio encontrado",
             "data": audio_files
-        }), status_code
+        }), 200
 
     except Exception as e:
         logger.error(f"Erro ao listar áudios: {str(e)}")
