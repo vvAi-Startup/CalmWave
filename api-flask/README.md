@@ -1,65 +1,105 @@
 # CalmWave API
 
-## Descrição
-API principal do CalmWave, responsável pelo gerenciamento de usuários, sessões de áudio e processamento de requisições. Integra-se com os componentes de IA para fornecer processamento de áudio em tempo real.
+API Flask para processamento de áudio com serviço de denoising.
 
-## Funcionalidades
-- Autenticação de usuários
-- Gerenciamento de sessões
-- Upload e processamento de áudio
-- Streaming de áudio
-- Integração com modelos de IA
-- Gerenciamento de playlists
+## Requisitos
 
-## Tecnologias
-![Python](https://img.shields.io/badge/-Python-0D1117?style=for-the-badge&logo=python&labelColor=0D1117&textColor=0D1117)&nbsp;
-![Flask](https://img.shields.io/badge/-Flask-0D1117?style=for-the-badge&logo=flask&labelColor=0D1117&textColor=0D1117)&nbsp;
+- Python 3.9+
+- Docker e Docker Compose
+- FFmpeg
 
+## Instalação
+
+1. Clone o repositório:
+```bash
+git clone https://github.com/seu-usuario/calmwave.git
+cd calmwave/api-flask
+```
+
+2. Crie um arquivo `.env` baseado no `.env.example`:
+```bash
+cp .env.example .env
+```
+
+3. Construa e inicie os containers:
+```bash
+docker-compose up --build
+```
+
+## Estrutura do Projeto
+
+```
+api-flask/
+├── app/
+│   ├── models/
+│   │   ├── audio_model.py
+│   │   └── user_model.py
+│   ├── resources/
+│   │   ├── audio_resource.py
+│   │   └── auth_resource.py
+│   ├── services/
+│   │   ├── audio_service.py
+│   │   └── auth_service.py
+│   ├── __init__.py
+│   ├── config.py
+│   └── extensions.py
+├── uploads/
+├── processed/
+├── temp_wavs/
+├── logs/
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+└── run.py
+```
 
 ## Endpoints
 
 ### Autenticação
-- `POST /auth/login` - Login de usuário
-- `POST /auth/register` - Registro de usuário
+
+- `POST /auth/register` - Registra um novo usuário
+- `POST /auth/login` - Autentica um usuário
+- `GET /auth/me` - Retorna informações do usuário atual
 
 ### Áudio
-- `POST /audio/process` - Processamento de áudio
-- `GET /audio/stream` - Streaming de áudio
-- `GET /audio/history` - Histórico de áudio
 
-## Como Usar
+- `POST /audio/upload` - Faz upload de um arquivo de áudio
+- `GET /audio/list` - Lista todos os áudios processados
+- `GET /audio/<upload_id>` - Retorna informações de um áudio específico
+- `DELETE /audio/<upload_id>` - Remove um áudio
 
-1. Crie um ambiente virtual:
-    ```bash
-    python -m venv venv
-    venv\Scripts\activate
-    ```
+## Configuração
 
-2. Instale as dependências:
-   ```bash
-   pip install -r requirements.txt
-   ```
+As configurações podem ser ajustadas através do arquivo `.env` ou variáveis de ambiente:
 
+- `FLASK_APP`: Nome do arquivo principal da aplicação
+- `FLASK_ENV`: Ambiente de execução (development/production)
+- `FLASK_DEBUG`: Habilita/desabilita modo debug
+- `SECRET_KEY`: Chave secreta para sessões
+- `MONGO_URI`: URI de conexão com o MongoDB
+- `MONGO_DATABASE`: Nome do banco de dados
+- `DENOISE_SERVER`: URL do serviço de denoising
+- `DENOISE_TIMEOUT`: Timeout para requisições ao serviço de denoising
+- `BASE_URL`: URL base da API
 
-3. Execute a API:
-   ```bash
-   python app.py
-   ```
+## Desenvolvimento
 
-## Estrutura do Projeto
+1. Instale as dependências:
+```bash
+pip install -r requirements.txt
 ```
-API/
-├── app.py            # Aplicação principal
-├── auth.py           # Autenticação
-├── audio_processor.py # Processamento de áudio
-├── requirements.txt  # Dependências
+
+2. Execute a aplicação:
+```bash
+python run.py
+```
+
+## Testes
+
+```bash
+pytest
 ```
 
 ## Licença
-Este projeto está licenciado sob a licença MIT.
 
-## Autores
-- Equipe CalmWave
-
-## Versão
-1.0.0 
+MIT 

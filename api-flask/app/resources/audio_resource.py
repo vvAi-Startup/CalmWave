@@ -1,42 +1,31 @@
 from flask import Blueprint, request, jsonify, send_from_directory, current_app
-from app.services.audio_service import AudioService
-from app.schemas.audio_schema import AudioProcessResponseSchema, AudioListSchema
-from app.extensions import logger  # Manter apenas logger aqui
 import os
+import uuid
+import time
+from app.services.audio_service import AudioService
+from app.extensions import logger
 
-audio_bp = Blueprint('audio', __name__, url_prefix='/')
+audio_bp = Blueprint('audio', __name__)
 
-# Declarar as instâncias dos serviços globalmente, mas elas serão preenchidas
-# no app/__init__.py APÓS a inicialização do DB.
-# Isso requer que as funções do blueprint as acessem via current_app.
-# Ou, se preferir, você pode passá-las como argumento para as funções do blueprint
-# se estiver usando uma abordagem de fábrica de blueprints mais avançada.
-# Para simplicidade e para resolver o problema atual, vamos injetar via current_app.
-# audio_service = None # REMOVA ESTA LINHA
+# Constantes para nomes padrão
+DEFAULT_FILENAME = "audio_sem_nome"
+DEFAULT_CONTENT_TYPE = "audio/unknown"
+DEFAULT_STATUS = "unknown"
+DEFAULT_MESSAGE = "Nenhuma mensagem disponível"
+DEFAULT_PATH = "sem_caminho"
+DEFAULT_SESSION = "sessao_padrao"
 
-# A função register_resources será removida, pois a inicialização será centralizada.
-# As rotas serão registradas diretamente no blueprint.
-
-
-@audio_bp.route('/health', methods=['GET'])
+@audio_bp.route('/health')
 def health_check():
-    """
-    Endpoint para verificar se a API está online.
-    """
+    """Endpoint para verificar se a API está online."""
     return jsonify({'status': 'ok', 'message': 'API is running!'}), 200
-
 
 @audio_bp.route('/upload', methods=['POST'])
 def upload_audio():
-    """
-    Endpoint para upload de áudio.
-    Recebe um arquivo de áudio, salva, converte para WAV (se necessário)
-    e envia para um serviço externo de denoising.
-    """
+    """Endpoint para upload de áudio."""
     try:
         if 'audio' not in request.files:
-            logger.error(
-                "Nenhum arquivo de áudio enviado na requisição /upload.")
+            logger.error("Nenhum arquivo de áudio enviado na requisição /upload.")
             return jsonify({
                 "error": "Nenhum arquivo de áudio enviado",
                 "status": "error",
@@ -44,37 +33,80 @@ def upload_audio():
             }), 400
 
         audio_file = request.files['audio']
+        filename = audio_file.filename
+        content_type = audio_file.content_type
+        upload_id = str(uuid.uuid4())
 
-        # Acessa o serviço de áudio da instância do Flask app
+        logger.info(f"ID {upload_id}: Iniciando upload do arquivo: {filename}")
+
+        # Usa a instância do serviço de áudio do app
         audio_service = current_app.audio_service
 
-        response_data, status_code = audio_service.handle_audio_upload(
-            audio_file)
-        return jsonify(response_data), status_code
+        # Salva o arquivo original
+        saved_m4a_path = audio_service.save_uploaded_audio(audio_file, upload_id)
+        if not saved_m4a_path:
+            logger.error(f"ID {upload_id}: Falha ao salvar o arquivo original.")
+            return jsonify({
+                "error": "Falha ao salvar o arquivo",
+                "status": "error",
+                "message": "Não foi possível salvar o arquivo de áudio"
+            }), 500
+
+        # Converte para WAV
+        processing_result = audio_service.convert_to_wav(saved_m4a_path, upload_id)
+        if not processing_result['success']:
+            logger.error(f"ID {upload_id}: Falha na conversão para WAV: {processing_result['message']}")
+            return jsonify({
+                "error": "Falha na conversão",
+                "status": "error",
+                "message": processing_result['message']
+            }), 500
+
+        # Envia para denoising
+        denoising_result = audio_service.send_to_denoising(
+            processing_result['output_path'],
+            upload_id,
+            filename
+        )
+
+        if denoising_result['status'] == 'error':
+            logger.error(f"ID {upload_id}: Falha no envio para denoising: {denoising_result['message']}")
+            return jsonify({
+                "error": "Falha no processamento",
+                "status": "error",
+                "message": denoising_result['message']
+            }), 500
+
+        return jsonify({
+            "status": "success",
+            "message": "Arquivo enviado para processamento",
+            "upload_id": upload_id,
+            "processed_audio_url": denoising_result['processed_audio_url']
+        }), 200
 
     except Exception as e:
-        logger.error(
-            f"Erro inesperado no endpoint /upload: {str(e)}", exc_info=True)
+        logger.error(f"Erro no upload de áudio: {str(e)}")
         return jsonify({
-            "error": "Erro interno do servidor",
+            "error": "Erro interno",
             "status": "error",
-            "message": "Falha ao processar o upload do áudio"
+            "message": str(e)
         }), 500
-
 
 @audio_bp.route('/clear_audio', methods=['POST'])
 def clear_audio():
-    """
-    Endpoint para receber um arquivo de áudio processado do microsserviço de denoising
-    e salvá-lo.
-    """
+    """Endpoint para receber o áudio processado do serviço de denoising."""
+    upload_id = DEFAULT_SESSION
     try:
         upload_id_from_form = request.form.get('upload_id')
-        original_filename_from_form = request.form.get('filename')
+        upload_id = upload_id_from_form or str(uuid.uuid4())
+
+        if not upload_id_from_form:
+            logger.warning(f"Requisição /clear_audio recebida sem upload_id específico. Usando gerado: {upload_id}")
+
+        logger.info(f"ID {upload_id}: Requisição /clear_audio recebida.")
 
         if 'audio' not in request.files:
-            logger.error(
-                f"ID {upload_id_from_form}: Nenhum arquivo de áudio enviado na requisição /clear_audio.")
+            logger.error(f"ID {upload_id}: Nenhum arquivo de áudio enviado na requisição /clear_audio.")
             return jsonify({
                 "error": "Nenhum arquivo de áudio enviado",
                 "status": "error",
@@ -82,84 +114,78 @@ def clear_audio():
             }), 400
 
         audio_file = request.files['audio']
+        original_filename = request.form.get('filename', DEFAULT_FILENAME)
+        unique_filename = f"{upload_id}_{original_filename}"
 
-        # Acessa o serviço de áudio da instância do Flask app
+        # Usa a instância do serviço de áudio do app
         audio_service = current_app.audio_service
-        # Prepara os dados para o método de serviço
-        service_data = {
-            "upload_id": upload_id_from_form,
-            "file": audio_file
-            # original_filename_from_form e request.url_root não são usados pela lógica atual do serviço handle_clear_audio_callback
-        }
-        response_data, status_code = audio_service.handle_clear_audio_callback(
-            service_data
-        )
-        return jsonify(response_data), status_code
+
+        # Salva o arquivo processado
+        saved_processed_path = audio_service.save_processed_audio(audio_file.read(), unique_filename)
+        if not saved_processed_path:
+            logger.error(f"ID {upload_id}: Falha ao salvar o arquivo processado.")
+            return jsonify({
+                "error": "Falha ao salvar arquivo processado",
+                "status": "error",
+                "message": "Não foi possível salvar o arquivo de áudio processado"
+            }), 500
+
+        # Atualiza metadados
+        audio_service.update_audio_metadata(upload_id, {
+            'status': 'processed',
+            'processed_path': saved_processed_path,
+            'processed_at': time.time()
+        })
+
+        # Limpa arquivos temporários
+        audio_service.cleanup_temp_files(upload_id)
+
+        return jsonify({
+            "status": "success",
+            "message": "Arquivo processado salvo com sucesso",
+            "upload_id": upload_id,
+            "processed_path": saved_processed_path
+        }), 200
 
     except Exception as e:
-        logger.error(f"Erro no endpoint /clear_audio: {str(e)}", exc_info=True)
+        logger.error(f"Erro no processamento do áudio: {str(e)}")
         return jsonify({
-            "error": "Erro interno do servidor",
+            "error": "Erro interno",
             "status": "error",
-            "message": "Falha ao processar o áudio limpo"
+            "message": str(e)
         }), 500
-
 
 @audio_bp.route('/audios/list', methods=['GET'])
-def list_audios_simplified():
-    """
-    Endpoint simplificado para listar áudios processados.
-    """
+def list_audios():
+    """Endpoint para listar áudios processados."""
     try:
-        # Acessa o serviço de áudio da instância do Flask app
+        # Usa a instância do serviço de áudio do app
         audio_service = current_app.audio_service
-        # Corrigido nome do método e desempacotamento
-        audios_list, status_code = audio_service.get_audio_urls()
+        audio_files = audio_service.list_processed_audios(request.url_root)
 
-        if status_code == 200:
-            return jsonify({
-                "status": "success",
-                "message": "Áudios listados com sucesso" if audios_list else "Nenhum áudio encontrado",
-                "data": audios_list
-            }), 200
-        else:
-            # Se o serviço retornar um erro (improvável para este método específico como está agora)
-            return jsonify(audios_list or {"error": "Falha ao listar áudios"}), status_code
+        return jsonify({
+            "status": "success",
+            "message": "Áudios listados com sucesso" if audio_files else "Nenhum áudio encontrado",
+            "data": audio_files
+        }), 200
 
     except Exception as e:
-        logger.error(f"Erro ao listar áudios: {str(e)}", exc_info=True)
+        logger.error(f"Erro ao listar áudios: {str(e)}")
         return jsonify({
             "status": "error",
-            "message": "Erro ao listar áudios",
-            "error": str(e),
-            "data": []
+            "message": f"Erro ao listar áudios: {str(e)}"
         }), 500
 
-
-@audio_bp.route('/processed/<path:filename>')
-def serve_audio(filename):
-    """
-    Endpoint para servir arquivos de áudio diretamente do diretório 'processed'.
-    """
+@audio_bp.route('/processed/<filename>')
+def serve_processed_audio(filename):
+    """Endpoint para servir arquivos de áudio processados."""
     try:
-        # Acessa o serviço de áudio da instância do Flask app
+        # Usa a instância do serviço de áudio do app
         audio_service = current_app.audio_service
-        file_path = audio_service.get_audio_file(filename)
-        if file_path:
-            return send_from_directory(current_app.config['PROCESSED_FOLDER'], filename)
-        else:
-            logger.warning(
-                f"Arquivo de áudio não encontrado para servir: {filename}")
-            return jsonify({
-                "status": "error",
-                "message": "Arquivo de áudio não encontrado",
-                "error": f"File not found: {filename}"
-            }), 404
+        return audio_service.serve_audio_file(filename)
     except Exception as e:
-        logger.error(
-            f"Erro ao servir áudio {filename}: {str(e)}", exc_info=True)
+        logger.error(f"Erro ao servir arquivo {filename}: {str(e)}")
         return jsonify({
             "status": "error",
-            "message": "Erro ao servir arquivo de áudio",
-            "error": str(e)
+            "message": f"Erro ao servir arquivo: {str(e)}"
         }), 500

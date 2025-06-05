@@ -5,26 +5,32 @@ import sys
 import os
 
 from app.config import Config
-# Import the extensions module to access its attributes after initialization
-import app.extensions as extensions_module # Alias to avoid conflict with app.extensions dict
+from app.extensions import init_extensions, logger, db
 
 from app.resources.audio_resource import audio_bp
 from app.resources.auth_resource import auth_bp
-from app.services.audio_service import AudioService
-from app.services.auth_service import AuthService
+from app.services import AudioService, AuthService
+from app.resources import register_resources
 
 
-def create_app():
+def create_app(config_object=None):
+    """Cria e configura a aplicação Flask."""
     app = Flask(__name__)
-    app.config.from_object(Config)
+
+    # Carrega a configuração
+    if config_object:
+        app.config.from_object(config_object)
+    else:
+        app.config.from_object('app.config.Config')
+
+    # Inicializa as extensões
+    db_instance = init_extensions(app)
 
     logging.basicConfig(
         level=getattr(logging, app.config['LOG_LEVEL']),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[logging.StreamHandler(sys.stdout)]
     )
-    # The app.logger is Flask's default logger, configured by basicConfig.
-    # If you need the logger from app.extensions specifically, use app.extensions.logger.
 
     CORS(app, resources={
         r"/*": {
@@ -38,15 +44,19 @@ def create_app():
     app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
     app.config['JSONIFY_MIMETYPE'] = 'application/json; charset=utf-8'
 
+    @app.errorhandler(404)
+    def not_found_error(error):
+        return {'status': 'error', 'message': 'Recurso não encontrado'}, 404
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        logger.error(f"Erro interno do servidor: {str(error)}")
+        return {'status': 'error', 'message': 'Erro interno do servidor'}, 500
+
     @app.errorhandler(Exception)
-    def handle_error(error):
-        # Use Flask's app logger or app.extensions.logger
-        app.logger.error(f"Erro não tratado: {str(error)}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "message": "Erro interno do servidor",
-            "error": str(error)
-        }), 500
+    def handle_exception(error):
+        logger.error(f"Erro não tratado: {str(error)}")
+        return {'status': 'error', 'message': str(error)}, 500
 
     @app.after_request
     def after_request(response):
@@ -56,21 +66,22 @@ def create_app():
         return response
 
     with app.app_context():
-        extensions_module.init_mongo(app)  # Call init_mongo from the aliased module
+        # Inicializa os serviços
+        app.audio_service = AudioService(db_instance)
+        app.auth_service = AuthService(db_instance)
 
-        # Services are initialized with the db instance from the extensions module,
-        # which is now guaranteed to be set up by init_mongo.
-        app.audio_service = AudioService(extensions_module.db)
-        app.auth_service = AuthService(extensions_module.db)
-
-
-        #app.config['BASE_URL'] = os.getenv('BASE_URL', 'http://127.0.0.1:5000')
-
+        # Cria diretórios necessários
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
         os.makedirs(app.config.get('TEMP_WAV_FOLDER', os.path.join(os.getcwd(), 'temp_wavs')), exist_ok=True)
 
-        app.register_blueprint(audio_bp)
-        app.register_blueprint(auth_bp)
+        # Registra os recursos
+        register_resources(app)
+
+    # Log de inicialização
+    logger.info("Aplicação Flask inicializada com sucesso")
+    logger.info(f"Ambiente: {app.config['FLASK_ENV']}")
+    logger.info(f"Debug: {app.config.get('DEBUG', False)}")
+    logger.info(f"Porta: {app.config.get('PORT', 5000)}")
 
     return app

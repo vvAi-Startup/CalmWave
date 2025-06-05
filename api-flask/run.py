@@ -1,11 +1,17 @@
 from app import create_app
-import logging
-import os
+from app.config import Config
+from app.extensions import logger
 
-app = create_app()
+app = create_app(Config)
 
 if __name__ == '__main__':
-    log_level = getattr(logging, app.config['LOG_LEVEL'])
-    logging.getLogger().setLevel(log_level)
-    logging.info(f"Iniciando a aplicação Flask com nível de log: {app.config['LOG_LEVEL']}")
-    app.run(host='0.0.0.0', port=5000, debug=os.getenv('FLASK_DEBUG') == '1')
+    try:
+        logger.info(f"Iniciando servidor na porta {app.config.get('PORT', 5000)}")
+        app.run(
+            host='0.0.0.0',
+            port=int(app.config.get('PORT', 5000)),
+            debug=app.config.get('DEBUG', False)
+        )
+    except Exception as e:
+        logger.error(f"Erro ao iniciar o servidor: {str(e)}")
+        raise
