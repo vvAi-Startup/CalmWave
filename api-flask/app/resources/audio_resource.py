@@ -161,13 +161,13 @@ def list_audios():
     try:
         # Usa a instância do serviço de áudio do app
         audio_service = current_app.audio_service
-        audio_files = audio_service.list_processed_audios(request.url_root)
+        audio_files, status_code = audio_service.get_audio_urls()
 
         return jsonify({
             "status": "success",
             "message": "Áudios listados com sucesso" if audio_files else "Nenhum áudio encontrado",
             "data": audio_files
-        }), 200
+        }), status_code
 
     except Exception as e:
         logger.error(f"Erro ao listar áudios: {str(e)}")
