@@ -135,7 +135,10 @@ class AudioService:
             try:
                 self.audio_model.update_one(
                     {"upload_id": upload_id},
-                    {"$set": {"status": "denoise_sent"}}
+                    {"$set": {
+                        "status": "denoise_sent",
+                        "denoise_requested_at": datetime.utcnow()
+                    }}
                 )
             except Exception as e:
                 logger.error(f"Erro ao atualizar status para denoise_sent: {str(e)}")
@@ -227,9 +230,11 @@ class AudioService:
                 self.audio_model.update_one(
                     {"upload_id": upload_id},
                     {"$set": {
+                        "processed_path": final_denoise_path,
                         "final_denoise_path": final_denoise_path,
-                        "status": "denoise_completed",
-                        "processed_audio_url": f"/processed/{unique_filename}"
+                        "status": "processed",
+                        "processed_at": datetime.utcnow(),
+                        "processed_filename": unique_filename
                     }}
                 )
             except Exception as e:
