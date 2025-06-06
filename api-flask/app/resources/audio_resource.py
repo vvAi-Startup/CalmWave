@@ -156,21 +156,32 @@ def clear_audio():
 
 @audio_bp.route('/audios/list', methods=['GET'])
 def list_audios():
-    """Endpoint para listar os áudios da pasta processed."""
+    """Endpoint para listar os áudios processados."""
     try:
-        # Lista todos os arquivos na pasta processed
-        processed_folder = current_app.config['PROCESSED_FOLDER']
+        # Usa a instância do serviço de áudio do app
+        audio_service = current_app.audio_service
+        
+        # Busca todos os áudios no banco de dados
+        audios = audio_service.audio_model.find_all()
         audio_files = []
         
-        if os.path.exists(processed_folder):
-            for filename in os.listdir(processed_folder):
-                if filename.endswith(('.wav', '.mp3', '.m4a')):
-                    file_path = os.path.join(processed_folder, filename)
-                    if os.path.isfile(file_path):
-                        audio_files.append({
-                            "filename": filename,
-                            "url": f"{request.url_root}processed/{filename}"
-                        })
+        for audio in audios:
+            audio_info = {
+                "upload_id": audio.get("upload_id"),
+                "original_filename": audio.get("original_filename"),
+                "status": audio.get("status"),
+                "message": audio.get("message"),
+                "created_at": audio.get("created_at"),
+                "last_updated_at": audio.get("last_updated_at")
+            }
+            
+            # Se tiver um arquivo processado, adiciona a URL
+            if audio.get("processed_path") and os.path.exists(audio.get("processed_path")):
+                filename = os.path.basename(audio.get("processed_path"))
+                audio_info["processed_url"] = f"{request.url_root}processed/{filename}"
+                audio_info["processed_filename"] = filename
+            
+            audio_files.append(audio_info)
         
         return jsonify({
             "status": "success",

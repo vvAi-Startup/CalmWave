@@ -16,15 +16,16 @@ async function getAuthHeaders(): Promise<HeadersInit> {
  
 /**
  * Define o tipo para um item de áudio retornado pela API.
- * Adicionamos o campo 'status' que agora é retornado pelo backend.
  */
 export type AudioListItem = {
-  id: string; // ID do MongoDB (_id)
-  session_id: string;
-  title: string;
-  path?: string; // URL para o arquivo WAV processado (ou temporário, dependendo do status). Tornamos opcional.
-  created_at: number; // Timestamp de criação
-  status: string; // Novo campo: o status atual do processamento do áudio (ex: "processed", "denoise_failed")
+  upload_id: string;
+  original_filename: string;
+  status: string;
+  message: string;
+  created_at: string;
+  last_updated_at: string;
+  processed_url?: string;
+  processed_filename?: string;
 };
  
 /**
@@ -198,13 +199,12 @@ export const audioService = {
  
   /**
    * Lista todos os áudios disponíveis, incluindo seu status de processamento.
-   * Não requer autenticação.
    * @returns Uma promessa que resolve para uma lista de AudioListItem.
    */
   async listAudios(): Promise<AudioListItem[]> {
     try {
       const url = `${API_BASE_URL}${API_ENDPOINTS.LIST_AUDIOS}`;
-      console.log('URL de listagem:', url); // Log para depuração
+      console.log('URL de listagem:', url);
      
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
@@ -227,7 +227,7 @@ export const audioService = {
         }
  
         const data = await response.json();
-        console.log('Resposta da API:', JSON.stringify(data, null, 2)); // Log detalhado
+        console.log('Resposta da API:', JSON.stringify(data, null, 2));
  
         if (!data || typeof data !== 'object') {
           console.error('Resposta inválida da API:', data);
@@ -239,40 +239,20 @@ export const audioService = {
           return [];
         }
  
-        return data.data.map((audio: any) => {
-          // Log para depuração de cada áudio
-          console.log('Processando áudio:', JSON.stringify(audio, null, 2));
- 
-          // Constrói a URL do áudio
-          let audioUrl = audio.path;
-          if (!audioUrl) {
-            console.warn('Áudio sem path:', audio);
-            return null;
-          }
- 
-          // Se o path não começa com http, adiciona a URL base
-          if (!audioUrl.startsWith('http')) {
-            audioUrl = `${API_BASE_URL}${audioUrl.startsWith('/') ? '' : '/'}${audioUrl}`;
-          }
- 
-          // Extrai o nome do arquivo para usar como título se necessário
-          const filename = audio.filename || audio.path.split('/').pop() || 'Áudio sem nome';
-          const title = audio.title || filename.replace(/\.[^/.]+$/, ''); // Remove extensão
- 
-          return {
-            id: audio.id || String(Math.random()), // Garante um ID único
-            session_id: audio.session_id || audio.id || String(Math.random()),
-            title: title || 'Áudio sem título',
-            path: audioUrl,
-            created_at: audio.created_at || Date.now(),
-            status: audio.status || 'processed'
-          };
-        }).filter(Boolean); // Remove itens nulos
+        return data.data.map((audio: any) => ({
+          upload_id: audio.upload_id,
+          original_filename: audio.original_filename,
+          status: audio.status,
+          message: audio.message,
+          created_at: audio.created_at,
+          last_updated_at: audio.last_updated_at,
+          processed_url: audio.processed_url,
+          processed_filename: audio.processed_filename
+        }));
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           throw new Error('Timeout ao listar áudios');
         }
-        console.error('Erro ao processar resposta:', error);
         throw error;
       }
     } catch (error) {
