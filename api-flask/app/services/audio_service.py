@@ -107,7 +107,7 @@ class AudioService:
                 }
                
                 response = requests.post(
-                    f"{current_app.config.get('DENOISE_SERVER', 'http://localhost:8000')}/audio/denoise",
+                    f"{current_app.config.get('DENOISE_SERVER', 'http://localhost:8000')}/denoise",
                     files=files,
                     params=params,
                     headers={
