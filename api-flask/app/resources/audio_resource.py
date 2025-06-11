@@ -4,6 +4,8 @@ import uuid
 import time
 from app.services.audio_service import AudioService
 from app.extensions import logger
+from datetime import datetime
+from werkzeug.utils import secure_filename
 
 audio_bp = Blueprint('audio', __name__)
 
@@ -23,84 +25,65 @@ def health_check():
 @audio_bp.route('/upload', methods=['POST'])
 def upload_audio():
     """Endpoint para upload de áudio."""
+    if 'file' not in request.files:
+        return jsonify({"error": "Nenhum arquivo enviado"}), 400
+        
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "Nenhum arquivo selecionado"}), 400
+        
     try:
-        if 'audio' not in request.files:
-            logger.error("Nenhum arquivo de áudio enviado na requisição /upload.")
-            return jsonify({
-                "error": "Nenhum arquivo de áudio enviado",
-                "status": "error",
-                "message": "Por favor, envie um arquivo de áudio válido"
-            }), 400
-
-        audio_file = request.files['audio']
-        filename = audio_file.filename
-        content_type = audio_file.content_type
+        # Salva o arquivo temporariamente
+        temp_path = os.path.join(current_app.config.get('TEMP_FOLDER', os.path.join(os.getcwd(), 'temp')), secure_filename(file.filename))
+        file.save(temp_path)
+        
+        # Gera um ID único para o upload
         upload_id = str(uuid.uuid4())
-
-        logger.info(f"ID {upload_id}: Iniciando upload do arquivo: {filename}")
-
-        # Usa a instância do serviço de áudio do app
-        audio_service = current_app.audio_service
-
-        # Salva o arquivo original
-        saved_m4a_path = audio_service.save_uploaded_audio(audio_file, upload_id)
-        if not saved_m4a_path:
-            logger.error(f"ID {upload_id}: Falha ao salvar o arquivo original.")
-            return jsonify({
-                "error": "Falha ao salvar o arquivo",
-                "status": "error",
-                "message": "Não foi possível salvar o arquivo de áudio"
-            }), 500
-
+        
         # Converte para WAV
-        processing_result = audio_service.convert_to_wav(saved_m4a_path, upload_id)
-        if not processing_result['success']:
-            logger.error(f"ID {upload_id}: Falha na conversão para WAV: {processing_result['message']}")
-            return jsonify({
-                "error": "Falha na conversão",
-                "status": "error",
-                "message": processing_result['message']
-            }), 500
-
-        # Envia para denoising
-        denoising_result = audio_service.send_to_denoising(
-            processing_result['output_path'],
+        audio_service = AudioService()
+        conversion_result = audio_service.convert_to_wav(temp_path, upload_id)
+        
+        if not conversion_result["success"]:
+            return jsonify({"error": conversion_result["message"]}), 500
+            
+        # Envia para denoise
+        denoise_response, denoise_status_code = audio_service.send_to_denoise(
+            conversion_result["output_path"],
             upload_id,
-            filename
+            secure_filename(file.filename)
         )
-
-        if denoising_result['status'] == 'error':
-            logger.error(f"ID {upload_id}: Falha no envio para denoising: {denoising_result['message']}")
-            return jsonify({
-                "error": "Falha no processamento",
-                "status": "error",
-                "message": denoising_result['message']
-            }), 500
-
+        
+        if denoise_status_code >= 400:
+            return jsonify(denoise_response), denoise_status_code
+            
         return jsonify({
-            "status": "success",
-            "message": "Arquivo enviado para processamento",
-            "upload_id": upload_id
+            "message": "Arquivo enviado com sucesso",
+            "upload_id": upload_id,
+            "denoise_status": denoise_response.get("message", "Enviado para denoise com sucesso")
         }), 200
-
+        
     except Exception as e:
-        logger.error(f"Erro no upload de áudio: {str(e)}")
-        return jsonify({
-            "error": "Erro interno",
-            "status": "error",
-            "message": str(e)
-        }), 500
+        logger.error(f"Erro no upload: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # Limpa o arquivo temporário
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 @audio_bp.route('/clear_audio', methods=['POST'])
 def clear_audio():
     """Endpoint para receber o áudio processado do serviço de denoising."""
-    upload_id = DEFAULT_SESSION
+    upload_id = None
     try:
-        upload_id_from_form = request.form.get('upload_id')
-        upload_id = upload_id_from_form or str(uuid.uuid4())
-
-        if not upload_id_from_form:
-            logger.warning(f"Requisição /clear_audio recebida sem upload_id específico. Usando gerado: {upload_id}")
+        upload_id = request.form.get('upload_id')
+        if not upload_id:
+            logger.warning("Requisição /clear_audio recebida sem upload_id específico.")
+            return jsonify({
+                "error": "upload_id não fornecido",
+                "status": "error",
+                "message": "O upload_id é obrigatório"
+            }), 400
 
         logger.info(f"ID {upload_id}: Requisição /clear_audio recebida.")
 
@@ -113,11 +96,21 @@ def clear_audio():
             }), 400
 
         audio_file = request.files['audio']
-        original_filename = request.form.get('filename', DEFAULT_FILENAME)
-        unique_filename = f"{upload_id}_{original_filename}"
+        original_filename = request.form.get('filename', 'audio.wav')
+        unique_filename = f"denoised_{upload_id}_{uuid.uuid4().hex}.wav"
 
         # Usa a instância do serviço de áudio do app
         audio_service = current_app.audio_service
+
+        # Verifica se o upload_id existe no banco
+        audio_doc = audio_service.audio_model.find_one({"upload_id": upload_id})
+        if not audio_doc:
+            logger.error(f"ID {upload_id}: Upload ID não encontrado no banco de dados.")
+            return jsonify({
+                "error": "Upload ID não encontrado",
+                "status": "error",
+                "message": "O upload_id fornecido não existe no banco de dados"
+            }), 404
 
         # Salva o arquivo processado
         saved_processed_path = audio_service.save_processed_audio(audio_file.read(), unique_filename)
@@ -130,14 +123,28 @@ def clear_audio():
             }), 500
 
         # Atualiza metadados
-        audio_service.update_audio_metadata(upload_id, {
+        update_result = audio_service.update_audio_metadata(upload_id, {
             'status': 'processed',
             'processed_path': saved_processed_path,
-            'processed_at': time.time()
+            'final_denoise_path': saved_processed_path,
+            'processed_filename': unique_filename,
+            'processed_at': datetime.utcnow(),
+            'last_updated_at': datetime.utcnow(),
+            'message': 'Arquivo processado com sucesso'
         })
+
+        if not update_result:
+            logger.error(f"ID {upload_id}: Falha ao atualizar metadados no banco de dados.")
+            return jsonify({
+                "error": "Falha ao atualizar metadados",
+                "status": "error",
+                "message": "Não foi possível atualizar os metadados do áudio no banco de dados"
+            }), 500
 
         # Limpa arquivos temporários
         audio_service.cleanup_temp_files(upload_id)
+
+        logger.info(f"ID {upload_id}: Arquivo processado salvo com sucesso em {saved_processed_path}")
 
         return jsonify({
             "status": "success",
@@ -154,41 +161,18 @@ def clear_audio():
             "message": str(e)
         }), 500
 
-@audio_bp.route('/audios/list', methods=['GET'])
+@audio_bp.route('/list', methods=['GET'])
 def list_audios():
-    """Endpoint para listar os áudios processados."""
     try:
-        # Usa a instância do serviço de áudio do app
         audio_service = current_app.audio_service
-        
-        # Busca todos os áudios no banco de dados
-        audios = audio_service.audio_model.find_all()
-        audio_files = []
-        
-        for audio in audios:
-            audio_info = {
-                "upload_id": audio.get("upload_id"),
-                "original_filename": audio.get("original_filename"),
-                "status": audio.get("status"),
-                "message": audio.get("message"),
-                "created_at": audio.get("created_at"),
-                "last_updated_at": audio.get("last_updated_at")
-            }
-            
-            # Se tiver um arquivo processado, adiciona a URL
-            if audio.get("processed_path") and os.path.exists(audio.get("processed_path")):
-                filename = os.path.basename(audio.get("processed_path"))
-                audio_info["processed_url"] = f"{request.url_root}processed/{filename}"
-                audio_info["processed_filename"] = filename
-            
-            audio_files.append(audio_info)
+        base_url = request.host_url.rstrip('/')
+        audios = audio_service.list_processed_audios(base_url)
         
         return jsonify({
             "status": "success",
-            "message": "Áudios listados com sucesso" if audio_files else "Nenhum áudio encontrado",
-            "data": audio_files
+            "message": "Áudios listados com sucesso",
+            "data": audios
         }), 200
-
     except Exception as e:
         logger.error(f"Erro ao listar áudios: {str(e)}")
         return jsonify({

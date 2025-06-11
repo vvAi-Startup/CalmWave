@@ -38,6 +38,121 @@ class AudioService:
         logger.error(f"[{upload_id if upload_id else 'N/A'}] {message}")
         return {"error": message}, http_status_code
  
+    def send_to_denoise(self, wav_path, upload_id, original_filename=None):
+        """
+        Envia o arquivo WAV para o serviço de denoising.
+        
+        Args:
+            wav_path (str): Caminho do arquivo WAV a ser processado
+            upload_id (str): ID do upload
+            original_filename (str, optional): Nome original do arquivo. Se não fornecido, será gerado um nome baseado no upload_id.
+            
+        Returns:
+            tuple: (response_dict, status_code)
+        """
+        try:
+            # Verifica se o arquivo existe
+            if not os.path.exists(wav_path):
+                return self._handle_error(upload_id, "file_missing", "Arquivo WAV não encontrado", 404)
+
+            # Gera o nome do arquivo se não fornecido
+            if not original_filename:
+                original_filename = f"final_processed_session_{upload_id}.wav"
+
+            # Busca informações do áudio no banco
+            audio_doc = self.audio_model.find_one({"upload_id": upload_id})
+            
+            with open(wav_path, "rb") as f:
+                files = {
+                    "audio_file": (original_filename, f, "audio/wav")
+                }
+               
+                # Valores padrão para os parâmetros
+                params = {
+                    "intensity": 1.0,
+                    "session_id": upload_id or "unknown",
+                    "user_id": audio_doc.get("user_id", "guest") if audio_doc else "guest",
+                    "filename": original_filename
+                }
+               
+                url = f"{current_app.config.get('DENOISE_SERVER', 'http://localhost:8000')}/audio/denoise"
+                
+                # Log detalhado da requisição
+                logger.debug(f"""
+                === DEBUG DA REQUISIÇÃO ===
+                URL: {url}
+                Headers: {{
+                    "Accept": "application/json"
+                }}
+                Query Params: {params}
+                Content-Type do arquivo: audio/wav
+                Nome do arquivo: {original_filename}
+                Intensidade: {params['intensity']}
+                Session ID: {params['session_id']}
+                User ID: {params['user_id']}
+                Filename: {params['filename']}
+                Tamanho do arquivo recebido: {os.path.getsize(wav_path)} bytes
+                Arquivo temporário criado: {wav_path}
+                === FIM DO DEBUG ===
+                """)
+               
+                # Faz a requisição
+                response = requests.post(
+                    url,
+                    files=files,
+                    params=params,
+                    headers={
+                        "Accept": "application/json"
+                    },
+                    timeout=current_app.config.get('DENOISE_TIMEOUT', 300)
+                )
+               
+                # Log detalhado da resposta
+                logger.debug(f"""
+                === DEBUG DA RESPOSTA ===
+                Status Code: {response.status_code}
+                Headers: {response.headers}
+                Response: {response.text}
+                URL Final: {response.url}
+                Request Headers: {response.request.headers}
+                Request Body: {response.request.body[:1000] if response.request.body else 'None'}
+                === FIM DO DEBUG ===
+                """)
+
+                if response.status_code == 422:
+                    error_msg = f"Erro de validação na requisição: {response.text}"
+                    logger.error(error_msg)
+                    return self._handle_error(upload_id, "validation_error", error_msg, 422)
+                
+                response.raise_for_status()
+
+                try:
+                    # Atualiza o status para denoise_sent
+                    self.audio_model.update_one(
+                        {"upload_id": upload_id},
+                        {"$set": {
+                            "status": "denoise_sent",
+                            "denoise_requested_at": datetime.utcnow(),
+                            "last_updated_at": datetime.utcnow(),
+                            "message": "Arquivo enviado para processamento de denoising"
+                        }}
+                    )
+                    logger.info(f"[{upload_id}] Status atualizado para denoise_sent")
+                except Exception as e:
+                    logger.error(f"Erro ao atualizar status para denoise_sent: {str(e)}")
+               
+                return {"message": "Arquivo enviado para denoise com sucesso", "upload_id": upload_id}, 200
+               
+        except requests.exceptions.Timeout:
+            return self._handle_error(upload_id, "denoise_timeout", "Timeout ao enviar para denoise", 504)
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Erro ao enviar para denoise: {str(e)}"
+            if hasattr(e.response, 'text'):
+                error_msg += f" - Resposta: {e.response.text}"
+            return self._handle_error(upload_id, "denoise_failed", error_msg, 500)
+        except Exception as e:
+            return self._handle_error(upload_id, "denoise_failed", f"Erro ao enviar para denoise: {str(e)}", 500)
+
     def handle_audio_upload(self, file_storage):
         upload_id = None
         if not file_storage:
@@ -67,7 +182,7 @@ class AudioService:
             logger.info(f"[{upload_id}] Arquivo salvo temporariamente e metadados registrados. Enviando para denoise.")
  
             # Chamar o serviço de denoise
-            denoise_response, denoise_status_code = self.send_to_denoise_service(upload_id)
+            denoise_response, denoise_status_code = self.send_to_denoise(temp_wav_path, upload_id, original_filename)
  
             if denoise_status_code >= 400:
                 return denoise_response, denoise_status_code
@@ -81,129 +196,6 @@ class AudioService:
         except Exception as e:
             logger.error(f"Erro geral em handle_audio_upload para upload_id {upload_id or 'N/A'}: {str(e)}", exc_info=True)
             return self._handle_error(upload_id, "upload_failed", f"Erro durante o upload inicial do arquivo: {str(e)}", 500)
- 
-    def send_to_denoise_service(self, upload_id):
-        audio_doc = self.audio_model.find_one({"upload_id": upload_id})
-        if not audio_doc:
-            return self._handle_error(upload_id, "not_found", "Áudio não encontrado", 404)
- 
-        temp_wav_path = audio_doc.get("temp_wav_path")
-        if not temp_wav_path or not os.path.exists(temp_wav_path):
-            return self._handle_error(upload_id, "file_missing", "Arquivo WAV temporário não encontrado", 404)
- 
-        try:
-            filename = f"final_processed_session_{upload_id}.wav"
-           
-            with open(temp_wav_path, "rb") as f:
-                files = {
-                    "audio_file": (filename, f, "audio/wav")
-                }
-               
-                params = {
-                    "intensity": 1.0,
-                    "session_id": upload_id,
-                    "user_id": "system",
-                    "filename": filename
-                }
-               
-                response = requests.post(
-                    f"{current_app.config.get('DENOISE_SERVER', 'http://localhost:8000')}/denoise",
-                    files=files,
-                    params=params,
-                    headers={
-                        "Accept": "application/json",
-                        "Content-Type": "multipart/form-data"
-                    },
-                    timeout=current_app.config.get('DENOISE_TIMEOUT', 300)
-                )
-               
-                logger.debug(f"""
-                === DEBUG DA REQUISIÇÃO ===
-                URL: {response.url}
-                Headers: {response.request.headers}
-                Query Params: {params}
-                Content-Type do arquivo: audio/wav
-                Nome do arquivo: {filename}
-                Intensidade: {params['intensity']}
-                Session ID: {upload_id}
-                Tamanho do arquivo enviado: {os.path.getsize(temp_wav_path)} bytes
-                === FIM DO DEBUG ===
-                """)
-               
-            response.raise_for_status()
- 
-            try:
-                # Atualiza o status para denoise_sent
-                self.audio_model.update_one(
-                    {"upload_id": upload_id},
-                    {"$set": {
-                        "status": "denoise_sent",
-                        "denoise_requested_at": datetime.utcnow(),
-                        "last_updated_at": datetime.utcnow(),
-                        "message": "Arquivo enviado para processamento de denoising"
-                    }}
-                )
-                logger.info(f"[{upload_id}] Status atualizado para denoise_sent")
-            except Exception as e:
-                logger.error(f"Erro ao atualizar status para denoise_sent: {str(e)}")
-           
-            return {"message": "Arquivo enviado para denoise com sucesso", "upload_id": upload_id}, 200
-           
-        except requests.exceptions.Timeout:
-            return self._handle_error(upload_id, "denoise_timeout", "Timeout ao enviar para denoise", 504)
-        except requests.exceptions.RequestException as e:
-            error_msg = f"Erro ao enviar para denoise: {str(e)}"
-            if hasattr(e.response, 'text'):
-                error_msg += f" - Resposta: {e.response.text}"
-            return self._handle_error(upload_id, "denoise_failed", error_msg, 500)
-        except Exception as e:
-            return self._handle_error(upload_id, "denoise_failed", f"Erro ao enviar para denoise: {str(e)}", 500)
- 
-    def send_to_denoising(self, wav_path, upload_id, original_filename):
-        """Envia o arquivo WAV para o serviço de denoising."""
-        try:
-            denoise_server = current_app.config.get('DENOISE_SERVER', 'http://localhost:8000')
-           
-            with open(wav_path, 'rb') as audio_file:
-                files = {
-                    'audio_file': (original_filename, audio_file, 'audio/wav')
-                }
-                params = {
-                    'intensity': 1.0,
-                    'session_id': upload_id or str(uuid.uuid4()),
-                    'user_id': 'system',
-                    'filename': original_filename,
-                }
-               
-                response = requests.post(
-                    f"{denoise_server}/audio/denoise",
-                    files=files,
-                    params=params,
-                )
-               
-                if response.status_code == 200:
-                    return {
-                        "status": "success",
-                        "message": "Arquivo enviado para processamento",
-                        "upload_id": upload_id
-                    }
-                else:
-                    return {
-                        "status": "error",
-                        "message": f"Erro no serviço de denoising: {response.text}"
-                    }
-                   
-        except requests.exceptions.Timeout:
-            return {
-                "status": "error",
-                "message": "Timeout ao enviar para o serviço de denoising"
-            }
-        except Exception as e:
-            logger.error(f"Erro ao enviar para denoising: {str(e)}")
-            return {
-                "status": "error",
-                "message": str(e)
-            }
  
     def handle_clear_audio_callback(self, data):
         upload_id = data.get("upload_id")
@@ -231,6 +223,9 @@ class AudioService:
             file_storage.save(final_denoise_path)
  
             try:
+                # Gera a URL do áudio processado
+                processed_url = f"/audio/processed/{unique_filename}"
+                
                 # Atualiza o status para processed
                 self.audio_model.update_one(
                     {"upload_id": upload_id},
@@ -240,6 +235,7 @@ class AudioService:
                         "status": "processed",
                         "processed_at": datetime.utcnow(),
                         "processed_filename": unique_filename,
+                        "processed_url": processed_url,
                         "last_updated_at": datetime.utcnow(),
                         "message": "Arquivo processado com sucesso"
                     }}
@@ -367,24 +363,18 @@ class AudioService:
             logger.error(f"Erro ao limpar arquivos temporários: {str(e)}")
  
     def list_processed_audios(self, base_url):
+        """Lista todos os áudios processados com suas URLs."""
         try:
             audios = self.audio_model.find_all({"status": "processed"})
-            result = []
-           
+            
             for audio in audios:
-                if 'processed_path' in audio:
-                    filename = os.path.basename(audio['processed_path'])
-                    result.append({
-                        "upload_id": audio['upload_id'],
-                        "filename": filename,
-                        "original_filename": audio.get('original_filename', ''),
-                        "created_at": audio.get('created_at', ''),
-                        "processed_at": audio.get('processed_at', ''),
-                        "url": f"{base_url}processed/{filename}"
-                    })
-           
-            return result
-           
+                if audio.get("processed_filename"):
+                    # Gera a URL completa do áudio processado
+                    audio["processed_url"] = f"{base_url}/audio/processed/{audio['processed_filename']}"
+                else:
+                    audio["processed_url"] = None
+                    
+            return audios
         except Exception as e:
             logger.error(f"Erro ao listar áudios processados: {str(e)}")
             return []
