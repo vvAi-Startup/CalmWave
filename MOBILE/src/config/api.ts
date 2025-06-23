@@ -9,9 +9,9 @@ export const API_ENDPOINTS = {
   GET_AUDIO: '/audio',
   STREAM_AUDIO: '/stream',
   CLEANUP: '/cleanup',
-  LIST_AUDIOS: '/audios/list',
+  LIST_AUDIOS: '/list',
   HEALTH_CHECK: '/health',
-  DELETE_AUDIO: '/audios/delete',
+  DELETE_AUDIO: '/delete',
 };
 
 // Configuração do timeout para requisições

@@ -57,7 +57,7 @@ export const audioService = {
       if (!fileInfo.exists) throw new Error('Arquivo não encontrado');
  
       const formData = new FormData();
-      formData.append('audio', {
+      formData.append('file', {
         uri: audioUri,
         type: 'audio/m4a', // Expo records in M4A by default
         name: `final_audio.m4a`, // A fixed name for the final audio file

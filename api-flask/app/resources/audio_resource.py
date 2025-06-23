@@ -33,15 +33,32 @@ def upload_audio():
         return jsonify({"error": "Nenhum arquivo selecionado"}), 400
         
     try:
+        # Garante que o diretório temp existe
+        temp_folder = current_app.config.get('TEMP_FOLDER', os.path.join(os.getcwd(), 'temp'))
+        os.makedirs(temp_folder, exist_ok=True)
+        
         # Salva o arquivo temporariamente
-        temp_path = os.path.join(current_app.config.get('TEMP_FOLDER', os.path.join(os.getcwd(), 'temp')), secure_filename(file.filename))
+        temp_path = os.path.join(temp_folder, secure_filename(file.filename))
         file.save(temp_path)
         
         # Gera um ID único para o upload
         upload_id = str(uuid.uuid4())
         
+        # Registra o áudio no banco de dados
+        audio_service = current_app.audio_service
+        audio_doc_id = audio_service.audio_model.create({
+            "upload_id": upload_id,
+            "original_filename": secure_filename(file.filename),
+            "status": "uploaded",
+            "uploaded_at": datetime.utcnow(),
+            "temp_path": temp_path,
+            "message": "Arquivo enviado com sucesso"
+        })
+        
+        if not audio_doc_id:
+            return jsonify({"error": "Falha ao registrar metadados do áudio"}), 500
+        
         # Converte para WAV
-        audio_service = AudioService()
         conversion_result = audio_service.convert_to_wav(temp_path, upload_id)
         
         if not conversion_result["success"]:
@@ -192,4 +209,36 @@ def serve_processed_audio(filename):
         return jsonify({
             "status": "error",
             "message": f"Erro ao servir arquivo: {str(e)}"
+        }), 500
+
+@audio_bp.route('/delete/<upload_id>', methods=['DELETE'])
+def delete_audio(upload_id):
+    """Endpoint para deletar um áudio."""
+    try:
+        audio_service = current_app.audio_service
+        
+        # Verifica se o áudio existe
+        audio_doc = audio_service.audio_model.find_one({"upload_id": upload_id})
+        if not audio_doc:
+            return jsonify({
+                "status": "error",
+                "message": "Áudio não encontrado"
+            }), 404
+        
+        # Remove arquivos físicos
+        audio_service.cleanup_temp_files(upload_id)
+        
+        # Remove do banco de dados
+        audio_service.audio_model.delete_one({"upload_id": upload_id})
+        
+        return jsonify({
+            "status": "success",
+            "message": "Áudio deletado com sucesso"
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Erro ao deletar áudio: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Erro ao deletar áudio: {str(e)}"
         }), 500

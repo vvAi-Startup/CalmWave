@@ -297,13 +297,24 @@ class AudioService:
  
     def convert_to_wav(self, input_path, upload_id):
         try:
+            # Verifica se o arquivo de entrada existe
+            if not os.path.exists(input_path):
+                return {"success": False, "message": f"Arquivo de entrada não encontrado: {input_path}"}
+            
             output_filename = f"{upload_id}_temp.wav"
-            output_path = os.path.join(current_app.config.get('TEMP_WAV_FOLDER', os.path.join(os.getcwd(), 'temp_wavs')), output_filename)
+            output_dir = current_app.config.get('TEMP_WAV_FOLDER', os.path.join(os.getcwd(), 'temp_wavs'))
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, output_filename)
            
-            os.system(f'ffmpeg -i {input_path} {output_path}')
+            # Comando ffmpeg com aspas para lidar com espaços no caminho
+            cmd = f'ffmpeg -i "{input_path}" "{output_path}"'
+            result = os.system(cmd)
+           
+            if result != 0:
+                return {"success": False, "message": f"Falha na conversão para WAV. Código de saída: {result}"}
            
             if not os.path.exists(output_path):
-                return {"success": False, "message": "Falha na conversão para WAV"}
+                return {"success": False, "message": "Falha na conversão para WAV - arquivo de saída não foi criado"}
            
             return {
                 "success": True,
@@ -352,20 +363,26 @@ class AudioService:
             if not audio_data:
                 return
            
+            # Remove arquivo original M4A
             if 'saved_m4a_path' in audio_data and os.path.exists(audio_data['saved_m4a_path']):
                 os.remove(audio_data['saved_m4a_path'])
            
+            # Remove arquivo temporário WAV
             temp_wav = os.path.join(current_app.config.get('TEMP_WAV_FOLDER', os.path.join(os.getcwd(), 'temp_wavs')), f"{upload_id}_temp.wav")
             if os.path.exists(temp_wav):
                 os.remove(temp_wav)
+            
+            # Remove arquivo processado se existir
+            if 'processed_path' in audio_data and os.path.exists(audio_data['processed_path']):
+                os.remove(audio_data['processed_path'])
                
         except Exception as e:
             logger.error(f"Erro ao limpar arquivos temporários: {str(e)}")
  
     def list_processed_audios(self, base_url):
-        """Lista todos os áudios processados com suas URLs."""
+        """Lista todos os áudios com suas URLs."""
         try:
-            audios = self.audio_model.find_all({"status": "processed"})
+            audios = self.audio_model.find_all({})
             
             for audio in audios:
                 if audio.get("processed_filename"):
@@ -376,7 +393,7 @@ class AudioService:
                     
             return audios
         except Exception as e:
-            logger.error(f"Erro ao listar áudios processados: {str(e)}")
+            logger.error(f"Erro ao listar áudios: {str(e)}")
             return []
  
     def serve_audio_file(self, filename):
