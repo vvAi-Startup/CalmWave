@@ -1,0 +1,62 @@
+# -----------------------------
+# Kotlin / Android / Gradle
+# -----------------------------
+.gradle/
+build/
+**/build/
+build-out/
+**/build-out/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local SDK/NDK config
+local.properties
+
+# Android SDK local (nunca deve ser commitado)
+.android-sdk/
+.android/
+
+# -----------------------------
+# Android Studio / IntelliJ
+# (ignorar a pasta .idea inteira é mais seguro)
+# -----------------------------
+.idea/
+
+*.iml
+*.ipr
+*.iws
+
+# -----------------------------
+# Kotlin / Java artifacts
+# -----------------------------
+*.class
+*.jar
+*.war
+*.ear
+
+# Kotlin metadata/cache
+*.kotlin_module
+
+# -----------------------------
+# Logs / temp
+# -----------------------------
+*.log
+*.tmp
+*.swp
+*.swo
+
+# -----------------------------
+# OS files
+# -----------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -----------------------------
+# Variáveis de ambiente
+# -----------------------------
+.env
+.env.local
+.env.*.local
