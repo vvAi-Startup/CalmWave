@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/ADM_CalmWave/back-end
     defaults:
       run:
         working-directory: ADM_CalmWave/back-end
