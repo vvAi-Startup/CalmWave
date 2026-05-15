@@ -1,73 +1,59 @@
-# React + TypeScript + Vite
+# vvAi Team — Apresentação Institucional
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Este repositório apresenta o site institucional da vvAi e serve como base de comunicação para investidores e parceiros.
 
-Currently, two official plugins are available:
+## Visão Geral
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+A vvAi nasceu com a missão de democratizar o acesso à Inteligência Artificial, transformando dados complexos em decisões claras e estratégicas. A empresa une tecnologia de ponta com design centrado no humano, priorizando segurança, confiabilidade e aplicação prática.
 
-## React Compiler
+## Problema que Resolvemos
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Organizações enfrentam grande volume de dados e poucos recursos especializados para extrair valor rapidamente. A vvAi resolve esse gargalo com soluções de IA acessíveis, seguras e orientadas a resultados.
 
-## Expanding the ESLint configuration
+## Solução e Diferenciais
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- IA aplicada ao contexto real: soluções focadas em uso diário, não apenas demonstrações.
+- Segurança e confiabilidade: proteção dos dados e modelos consistentes.
+- Experiência prática: interfaces e fluxos desenhados para uso direto por times não técnicos.
+- Ética e impacto: tecnologia pensada para melhorar processos e pessoas.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Portfólio e Atuação
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+A vvAi atua em projetos de IA aplicada, dados e produtos digitais com foco em impacto social e eficiência operacional. O principal case público é o CalmWave, uma solução de acessibilidade auditiva para estudantes com TPAC, detalhada no repositório principal.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- IA aplicada à educação e acessibilidade
+- Engenharia de dados e análises para tomada de decisão
+- Produtos web e mobile com foco em experiência
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Missão e Visão
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- Missão: capacitar negócios com soluções de IA acessíveis, seguras e práticas, automatizando processos e potencializando resultados.
+- Visão: ser a ponte definitiva entre a inovação tecnológica e o sucesso prático do negócio, liderando a transformação digital com ética e eficiência.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Nossa Equipe
+
+Equipe multidisciplinar focada em transformar o caos de dados em soluções elegantes, éticas e de alto impacto:
+
+- Leonardo Wicher L. Ferreira — Gestão e Desenvolvimento BackEnd
+- Bruno Lopes de Souza — Desenvolvimento e Análise de Dados
+- Daniel Augusto Mandira — Desenvolvimento Mobile
+- João Pedro F. Cordeiro — Desenvolvimento FrontEnd
+- Marcelo Augusto A. da Cruz — Engenharia de Dados e Machine Learning
+
+## Tecnologia
+
+O site institucional foi desenvolvido com foco em desempenho e experiência moderna:
+
+- React + TypeScript
+- Vite
+- Arquitetura de componentes e seções temáticas
+
+## Próximos Passos
+
+- Evoluir as demonstrações públicas e a documentação de impacto
+- Publicar mais estudos de caso com resultados mensuráveis
+- Abrir parcerias para validação em campo
+
+## Contato
+
+Se você é investidor ou parceiro e deseja aprofundar a conversa, entre em contato com a equipe pela página institucional.
