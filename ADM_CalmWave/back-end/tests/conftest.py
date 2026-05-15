@@ -3,8 +3,7 @@ from app import create_app, db
 
 @pytest.fixture
 def app():
-    _app = create_app()
-    _app.config.update({
+    _app = create_app({
         "TESTING": True,
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
         "JWT_SECRET_KEY": "test-key"

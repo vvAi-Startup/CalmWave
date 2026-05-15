@@ -17,7 +17,7 @@ jwt = JWTManager()
 socketio = SocketIO(cors_allowed_origins="*")
 limiter = Limiter(key_func=get_remote_address)
 
-def create_app():
+def create_app(test_config=None):
     app = Flask(__name__)
 
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
@@ -29,12 +29,16 @@ def create_app():
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
 
+    if test_config:
+        app.config.update(test_config)
+
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
     CORS(app, resources={r"/api/*": {"origins": [frontend_url, "http://localhost:5000"]}})
 
     db.init_app(app)
-    from app.supabase_ext import init_supabase
-    init_supabase(app)
+    if not app.config.get("TESTING"):
+        from app.supabase_ext import init_supabase
+        init_supabase(app)
     jwt.init_app(app)
     socketio.init_app(app)
     limiter.init_app(app)
@@ -126,8 +130,9 @@ def create_app():
     app.register_blueprint(privacy_bp, url_prefix="/api/privacy")
     app.register_blueprint(billing_bp, url_prefix="/api/billing")
 
-    with app.app_context():
-        _seed_admin()
+    if not app.config.get("TESTING"):
+        with app.app_context():
+            _seed_admin()
 
     return app
 
