@@ -150,7 +150,7 @@ export default function Projects() {
               {/* CTA */}
               <div className="flex items-center gap-4">
                 <a
-                  href="#"
+                  href="https://calmwave-landingpage.vercel.app/" target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-vvai-purple to-vvai-highlight text-white font-bold text-sm tracking-wide shadow-[0_0_20px_rgba(174,66,239,0.3)] hover:shadow-[0_0_35px_rgba(174,66,239,0.5)] hover:scale-105 transition-all duration-300"
                 >
                   Conheça a Tecnologia
@@ -159,7 +159,7 @@ export default function Projects() {
                   </svg>
                 </a>
                 <a
-                  href="#"
+                  href="https://drive.proton.me/urls/7JEN8ZYPZ4#nkRYwlHMZPLc" target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-white/10 text-white/60 font-semibold text-sm tracking-wide hover:border-vvai-purple/50 hover:text-white transition-all duration-300"
                 >
                   Ver Demo
