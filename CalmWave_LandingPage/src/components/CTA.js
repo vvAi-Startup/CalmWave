@@ -76,8 +76,9 @@ export default function CTA() {
           >
             {/* 1. Botão Principal: Experimente Gratuitamente */}
             <motion.a 
-              href="https://github.com/vvAi-Startup/Application_mobile" // Adicionando um href de exemplo
+              href="https://drive.proton.me/urls/7JEN8ZYPZ4#nkRYwlHMZPLc" // Adicionando um href de exemplo
               target="_blank"
+              norel="noopener noreferrer"
               className={`${buttonBaseClasses} bg-white text-teal-600 shadow-lg hover:shadow-xl`}
               whileHover={{ 
                 scale: 1.05,
