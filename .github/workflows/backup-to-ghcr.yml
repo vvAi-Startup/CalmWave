@@ -2,7 +2,10 @@ name: Backup to Docker Hub
 
 on:
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "1 0 * * *"
+  push:
+    branches:
+      - "**"
 
 permissions:
   contents: read
